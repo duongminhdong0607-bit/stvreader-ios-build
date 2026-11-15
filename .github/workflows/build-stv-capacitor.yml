@@ -1,0 +1,59 @@
+name: Build original-style Capacitor iOS app
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - 'repair/**'
+      - '.github/workflows/build-stv-capacitor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: repair
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore intact original app interface assets from publisher CDN
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o original-truncated.ipa https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa
+          python3 extract_assets.py original-truncated.ipa www
+          rm -f original-truncated.ipa
+      - name: Check official app server
+        shell: bash
+        run: |
+          curl -sSLI --max-time 20 https://sangtacviet.com/app.v2.php | head -15 || true
+      - name: Install native Capacitor and iOS plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm install --no-audit --no-fund
+          npx cap add ios
+          npx cap sync ios
+          echo "Native dependency verification:"
+          find ios -name '*.framework' -o -name '*.xcframework' | head -40
+      - name: Build ARM64 IPA (unsigned, for Sideloadly)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stv-capacitor" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          APP="$RUNNER_TEMP/stv-capacitor/Build/Products/Release-iphoneos/App.app"
+          test -s "$APP/App"
+          test -f "$APP/Info.plist"
+          xcrun lipo -archs "$APP/App" | grep -w arm64
+          mkdir -p Payload
+          ditto "$APP" Payload/App.app
+          zip -qry STVMobileReader-Capacitor-rebuild-unsigned.ipa Payload
+          unzip -t STVMobileReader-Capacitor-rebuild-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-Capacitor-rebuild-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STVMobileReader-Capacitor-rebuild-unsigned-IPA
+          path: repair/STVMobileReader-Capacitor-rebuild-unsigned.ipa
+          retention-days: 7
