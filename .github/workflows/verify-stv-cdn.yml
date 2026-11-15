@@ -1,0 +1,27 @@
+name: Verify STV CDN full IPA length
+on:
+  push:
+    paths:
+      - .github/workflows/verify-stv-cdn.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect-cdn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Inspect remote size checksum and HTTP Range
+        run: |
+          set -euo pipefail
+          URL="https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa"
+          echo "### HEAD headers"
+          curl -sSIL --connect-timeout 12 --max-time 45 "$URL" | grep -Ei 'HTTP/|content-length:|content-type:|accept-ranges:|content-range:|location:' || true
+          echo "### GET 1 byte past damaged archive length"
+          curl -sSL -D /tmp/range.headers --connect-timeout 12 --max-time 45 -r 12648448-12648463 "$URL" -o /tmp/range.bin || true
+          grep -Ei 'HTTP/|content-length:|content-range:|accept-ranges:' /tmp/range.headers || true
+          wc -c /tmp/range.bin || true
+          echo "### Source hash"
+          curl -fsSL --connect-timeout 12 --max-time 60 "$URL" -o /tmp/original.ipa
+          sha256sum /tmp/original.ipa
+          wc -c /tmp/original.ipa
