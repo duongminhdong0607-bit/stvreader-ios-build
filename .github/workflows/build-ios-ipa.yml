@@ -1,0 +1,33 @@
+name: Build iOS IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build iPhone app
+        run: |
+          set -euo pipefail
+          xcodebuild -project STVReader.xcodeproj -scheme STVReader -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stv" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/stv/Build/Products/Release-iphoneos/STVReader.app"
+          test -s "$APP/STVReader"
+          test -f "$APP/Info.plist"
+          xcrun lipo -archs "$APP/STVReader" | grep -w arm64
+          mkdir -p Payload
+          ditto "$APP" Payload/STVReader.app
+          zip -qry STVReader-unsigned.ipa Payload
+          unzip -t STVReader-unsigned.ipa > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STVReader-unsigned-IPA
+          path: STVReader-unsigned.ipa
+          retention-days: 7
