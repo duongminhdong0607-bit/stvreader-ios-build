@@ -1,0 +1,30 @@
+name: Recover STV MobileReader original IPA
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/recover-stv-original.yml
+permissions:
+  contents: read
+jobs:
+  download-original:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download original STV MobileReader IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa'
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -A 'Mozilla/5.0' -o STVMobileReader-original.ipa "$URL"
+          ls -lh STVMobileReader-original.ipa
+          unzip -t STVMobileReader-original.ipa | tail -4
+          unzip -Z1 STVMobileReader-original.ipa | grep -E 'Payload/[^/]+\.app/(Info.plist|Frameworks/)'
+          unzip -Z1 STVMobileReader-original.ipa | grep -q '/Frameworks/Capacitor.framework/'
+          unzip -Z1 STVMobileReader-original.ipa | grep -q '/Frameworks/CordovaPlugins.framework/'
+      - name: Upload intact IPA only
+        uses: actions/upload-artifact@v4
+        with:
+          name: STVMobileReader-original-intact
+          path: STVMobileReader-original.ipa
+          retention-days: 3
