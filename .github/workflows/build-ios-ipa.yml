@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build STV Reader Native IPA
 on:
   push:
     branches: [main]
@@ -11,23 +11,24 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Build iPhone app
+      - name: Build native iPhone application
         run: |
           set -euo pipefail
-          xcodebuild -project STVReader.xcodeproj -scheme STVReader -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stv" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
-      - name: Package IPA
+          xcodebuild -project STVReader.xcodeproj -scheme STVReader -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stvnative" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Verify native binary and package
         run: |
           set -euo pipefail
-          APP="$RUNNER_TEMP/stv/Build/Products/Release-iphoneos/STVReader.app"
+          APP="$RUNNER_TEMP/stvnative/Build/Products/Release-iphoneos/STVReader.app"
           test -s "$APP/STVReader"
-          test -f "$APP/Info.plist"
+          test -s "$APP/Info.plist"
           xcrun lipo -archs "$APP/STVReader" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/STVReader.app
-          zip -qry STVReader-unsigned.ipa Payload
-          unzip -t STVReader-unsigned.ipa > /dev/null
+          zip -qry STVReader-Native-unsigned.ipa Payload
+          unzip -t STVReader-Native-unsigned.ipa > /dev/null
+          ls -lh STVReader-Native-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVReader-unsigned-IPA
-          path: STVReader-unsigned.ipa
+          name: STVReader-Native-unsigned-IPA
+          path: STVReader-Native-unsigned.ipa
           retention-days: 7
