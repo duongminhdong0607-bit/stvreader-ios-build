@@ -2,7 +2,6 @@
   "appId": "com.stvreader.capacitor.rebuild",
   "appName": "STV MobileReader - Rebuild",
   "webDir": "www",
-  "bundledWebRuntime": false,
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
@@ -16,7 +15,7 @@
   },
   "server": {
     "hostname": "sangtacviet.com",
-    "iosScheme": "https",
+    "iosScheme": "capacitor",
     "url": "https://sangtacviet.com/app.v2.php"
   }
 }
