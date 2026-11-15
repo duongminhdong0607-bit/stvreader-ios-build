@@ -1,0 +1,27 @@
+name: Probe current STV app endpoints
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/probe-stv-server.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request STV URLs
+        run: |
+          for url in \
+           https://sangtacviet.com/ \
+           https://sangtacviet.com/app.v2.php \
+           https://sangtacviet.com/asset/app.v2.main.js \
+           https://sangtacviet.app/ \
+           https://sangtacviet.app/app.v2.php \
+           https://sangtacviet.app/mobile/download.php \
+           https://sangtacviet.pro/app.v2.php \
+           https://sangtacviet.vip/app.v2.php \
+           https://sangtacviet.xyz/app.v2.php ; do
+            printf '%s : ' "$url"
+            curl --max-time 12 --connect-timeout 6 -A 'Mozilla/5.0' -sSL -o /dev/null -w '%{http_code} %{url_effective}\n' "$url" || true
+          done
