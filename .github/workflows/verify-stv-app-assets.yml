@@ -1,0 +1,26 @@
+name: Verify STV app JavaScript availability
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/verify-stv-app-assets.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe application scripts on official domain variants
+        run: |
+          set -e
+          for domain in sangtacviet.com sangtacviet.app sangtacviet.pro; do
+            for path in app.v2.php asset/app.v2.main.js asset/app.v2.js asset/app.v2.css; do
+              url="https://$domain/$path"
+              printf '%s ' "$url"
+              curl -fL -sS --connect-timeout 4 --max-time 10 -o /tmp/probe -w '%{http_code} %{size_download} bytes %{content_type}\n' "$url" || true
+              if [ "$path" = 'app.v2.php' ]; then
+                echo "Top of PHP page (first 200 characters):"
+                head -c 200 /tmp/probe | tr '\n' ' '; echo
+              fi
+            done
+          done
