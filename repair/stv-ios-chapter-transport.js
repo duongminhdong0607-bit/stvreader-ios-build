@@ -14,7 +14,7 @@
       try {
         const parsed = new URL(url, window.location.href);
         if (parsed.origin === 'https://sangtacviet.com' &&
-            parsed.pathname === '/index.php' &&
+            (parsed.pathname === '/' || parsed.pathname === '/index.php') &&
             parsed.searchParams.get('sajax') === 'readchapter') {
           try {
             return await net.getCapacitor(parsed.href);
