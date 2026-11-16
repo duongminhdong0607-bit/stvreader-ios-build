@@ -1,4 +1,4 @@
-name: Build STV MobileReader Search Sync fixed UI
+name: Build STV MobileReader 1.3.3 iOS Rebuild
 on:
   push:
     branches: [stv-capacitor-rebuild]
@@ -22,8 +22,19 @@ jobs:
         run: |
           set -euo pipefail
           curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o original-truncated.ipa https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa
+          python3 - <<'PY'
+          import hashlib
+          p="original-truncated.ipa"
+          d=hashlib.sha256(open(p,"rb").read()).hexdigest()
+          assert d=="d7564dedfdba305c68e64470354b1f6856e81ea3d5b995ada90ca60ee05ea270", ("Unexpected IPA 1.3.2 source",d)
+          print("Original iOS IPA matches uploaded file; repairing recoverable resources only")
+          PY
           python3 extract_assets.py original-truncated.ipa www
           rm -f original-truncated.ipa
+          # Use EXACT STV 1.3.3 Android source to recover portable resources.
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o stvmobilereader-1.3.3.apk https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk
+          python3 import_stv_133.py stvmobilereader-1.3.3.apk www
+          rm -f stvmobilereader-1.3.3.apk
           # The damaged IPA contains an outdated index.html which requests
           # /asset/app.v2.main.js (HTTP 404). Never launch that obsolete page.
           cat > www/index.html <<'HTML'
@@ -49,6 +60,10 @@ jobs:
           npx cap add ios
           npx cap sync ios
           python3 patch_app_delegate.py
+          python3 finalize_ios_133.py
+          grep -q 'STVActions.shared.prepare()' ios/App/App/AppDelegate.swift
+          grep -q 'CFBundleDisplayName' ios/App/App/Info.plist
+          test -s ios/App/App/Assets.xcassets/AppIcon.appiconset/Contents.json
           grep -q 'STVActions.shared.prepare()' ios/App/App/AppDelegate.swift
           echo "Native dependency verification:"
           find ios -name '*.framework' -o -name '*.xcframework' | head -40
@@ -63,11 +78,11 @@ jobs:
           xcrun lipo -archs "$APP/App" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/App.app
-          zip -qry STVMobileReader-Search-Sync-Fixed-unsigned.ipa Payload
-          unzip -t STVMobileReader-Search-Sync-Fixed-unsigned.ipa > /dev/null
-          ls -lh STVMobileReader-Search-Sync-Fixed-unsigned.ipa
+          zip -qry STVMobileReader-1.3.3-iOS-Rebuild-unsigned.ipa Payload
+          unzip -t STVMobileReader-1.3.3-iOS-Rebuild-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-1.3.3-iOS-Rebuild-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVMobileReader-Search-Sync-Fixed-IPA
-          path: repair/STVMobileReader-Search-Sync-Fixed-unsigned.ipa
+          name: STVMobileReader-1.3.3-iOS-Rebuild-IPA
+          path: repair/STVMobileReader-1.3.3-iOS-Rebuild-unsigned.ipa
           retention-days: 7
