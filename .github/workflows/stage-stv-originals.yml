@@ -1,0 +1,39 @@
+name: Stage verified STV 1.3.2 IPA and 1.3.3 APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/stage-stv-originals.yml]
+permissions:
+  contents: read
+jobs:
+  download-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Retrieve originals from publisher CDN
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p src
+          curl -fL --retry 2 --connect-timeout 10 --max-time 90 -o src/stvmobilereader-1.3.2.ipa 'https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa'
+          curl -fL --retry 2 --connect-timeout 10 --max-time 90 -o src/stvmobilereader-1.3.3.apk 'https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk'
+          python3 - <<'PY'
+          import hashlib,zipfile
+          sources={
+            'src/stvmobilereader-1.3.2.ipa':'d7564dedfdba305c68e64470354b1f6856e81ea3d5b995ada90ca60ee05ea270',
+            'src/stvmobilereader-1.3.3.apk':'69c64e7caf09a1ad7edf00008065f35dda6eb65ffc0e6779d2a10fa7c1c7de40',
+          }
+          for path,expected in sources.items():
+            actual=hashlib.sha256(open(path,'rb').read()).hexdigest()
+            assert actual==expected,(path,actual)
+            print('Verified original',path,actual)
+          with zipfile.ZipFile('src/stvmobilereader-1.3.3.apk') as z:
+            assert z.testzip() is None
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STV-Verified-Originals
+          path: src/*
+          retention-days: 3
+          compression-level: 0
