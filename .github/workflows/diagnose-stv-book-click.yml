@@ -1,0 +1,107 @@
+name: Diagnose tapping STV search result on iOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/diagnose-stv-book-click.yml]
+permissions:
+  contents: read
+jobs:
+  diagnosis:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Playwright
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Check mobile STV result interaction
+        shell: bash
+        run: |
+          cat > /tmp/stv-click-test.cjs <<'JS'
+          const {chromium}=require(process.cwd()+'/node_modules/playwright');
+          const fs=require('fs');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:2});
+            const errors=[],requests=[],messages=[];
+            page.on('pageerror',e=>errors.push({message:e.message,stack:e.stack?.slice(0,1700)}));
+            page.on('console',m=>{if(m.type()==='error')messages.push(m.text().slice(0,500))});
+            page.on('requestfailed',r=>requests.push({url:r.url().slice(0,180),failure:r.failure()?.errorText}));
+            page.on('popup',p=>messages.push('POPUP: '+p.url()));
+            await page.addInitScript({content:fs.readFileSync('repair/stv-ios-compat.js','utf8')});
+            await page.addInitScript({content:fs.readFileSync('repair/stv-ios-tts.js','utf8')});
+            await page.addInitScript(()=>{
+              const noop=()=>Promise.resolve({});
+              window.Capacitor={
+                platform:'ios',getPlatform:()=> 'ios',
+                Plugins:{
+                  App:{getLaunchUrl:async()=>null,addListener:noop,exitApp:noop},
+                  StatusBar:{setStyle:noop,hide:noop,show:noop,setOverlaysWebView:noop},
+                  Keyboard:{addListener:noop},
+                  Haptics:{impact:noop,notification:noop,vibrate:noop},
+                  TextToSpeech:{speak:noop,stop:noop,getSupportedLanguages:async()=>({languages:['vi-VN']})}
+                }
+              };
+              window.__clickLog=[];
+              document.addEventListener('click',e=>{
+                const n=e.target?.closest?.('[onclick],a,[data-bookid],[data-id]') || e.target;
+                window.__clickLog.push({tag:n?.tagName,cls:String(n?.className).slice(0,200),id:n?.id,href:n?.getAttribute?.('href'),onclick:n?.getAttribute?.('onclick')?.slice(0,150),text:n?.innerText?.slice(0,100)});
+              },true);
+            });
+            await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:60000});
+            await page.waitForTimeout(7000);
+            console.log('START',JSON.stringify(await page.evaluate(()=>({theme:typeof app?.theme,search:typeof app?.fun?.showSearch,buttons:[...document.querySelectorAll('input')].map(x=>({id:x.id,placeholder:x.placeholder,class:x.className})).slice(0,25)}))));
+            await page.evaluate(()=>app.fun.showSearch());
+            await page.waitForTimeout(1200);
+            console.log('INPUTS_AFTER_SEARCH',JSON.stringify(await page.evaluate(()=>[...document.querySelectorAll('input')].filter(x=>x.offsetWidth>0).map(x=>({id:x.id,placeholder:x.placeholder,class:x.className,html:x.outerHTML.slice(0,400)})))));
+            const inputs=page.locator('input:visible');
+            const count=await inputs.count();
+            let input=null;
+            for(let i=0;i<count;i++){
+              const v=inputs.nth(i);
+              const ph=(await v.getAttribute('placeholder'))||'';
+              if(/tìm|search|truyện|tên/i.test(ph)){input=v;break}
+            }
+            if(!input && count)input=inputs.last();
+            if(!input){console.log('NO_INPUT');await browser.close();return;}
+            await input.fill('Hồng Hoang');
+            await input.press('Enter');
+            await page.waitForTimeout(5000);
+            const snapshot=await page.evaluate(()=>({
+              url:location.href,text:document.body.innerText.slice(0,1400),
+              candidates:[...document.querySelectorAll('a,[onclick],.searchbook,.book,.bookitem,[data-bookid]')].filter(e=>/Hồng Hoang|Hồng Hoàng/i.test(e.innerText||'')).slice(0,10).map(e=>({tag:e.tagName,class:e.className,id:e.id,href:e.getAttribute('href'),onclick:e.getAttribute('onclick'),html:e.outerHTML.slice(0,650)})),
+              visible:[...document.querySelectorAll('body *')].filter(e=>e.children.length===0&&/Hồng Hoang|Hồng Hoàng/i.test(e.textContent||'')&&e.offsetWidth>0).slice(0,10).map(e=>({text:e.textContent,tag:e.tagName,outer:e.parentElement?.outerHTML.slice(0,750)}))
+            }));
+            console.log('SEARCH_RESULT',JSON.stringify(snapshot));
+            await page.screenshot({path:'stv-search-before.png',fullPage:false});
+            const leaf=page.getByText(/Hồng Hoang chi Minh Hà một kiếm/i).first();
+            console.log('MATCH_FIRST',await leaf.count());
+            if(await leaf.count()){
+              try {await leaf.click({timeout:10000})}catch(e){console.log('CLICK_EXCEPTION',e.message.slice(0,1000))}
+            } else {
+              console.log('NO_MATCH_FIRST');
+            }
+            await page.waitForTimeout(5500);
+            const after=await page.evaluate(()=>({
+              href:location.href,body:document.body.innerText.slice(0,1100),
+              tabs:document.querySelectorAll('.smtab').length,
+              log:window.__clickLog,
+              displayed:[...document.querySelectorAll('div')].filter(e=>e.offsetWidth>0 && /chapter|đọc truyện/i.test(e.id||'')).slice(0,8).map(e=>e.id)
+            }));
+            console.log('AFTER_CLICK',JSON.stringify(after));
+            console.log('ERRORS',JSON.stringify(errors.slice(-15)));
+            console.log('CONSOLE_ERRORS',JSON.stringify(messages.slice(-15)));
+            console.log('FAILED_REQUESTS',JSON.stringify(requests.slice(-15)));
+            await page.screenshot({path:'stv-search-after.png',fullPage:false});
+            await browser.close();
+          })().catch(e=>{console.error('TEST_FAILED',e.stack);process.exit(1)});
+          JS
+          node /tmp/stv-click-test.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: STV-book-click-screenshots
+          path: stv-search-*.png
+          retention-days: 2
