@@ -128,6 +128,10 @@ struct RootView: View {
                 .tabItem {
                     Label("Thư viện", systemImage: "books.vertical.fill")
                 }
+            STVOnlineSearchView()
+                .tabItem {
+                    Label("Tìm STV", systemImage: "magnifyingglass")
+                }
             ReaderSettingsView()
                 .tabItem {
                     Label("Cài đặt", systemImage: "textformat.size")
@@ -705,5 +709,305 @@ final class NativeSpeechReader: NSObject, ObservableObject, AVSpeechSynthesizerD
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { self.speaking = false }
+    }
+}
+
+
+// MARK: Native STV public catalog — SwiftUI + Foundation URLSession only.
+// This is an independent client, NOT an official STV iOS app. No WKWebView.
+// STV's unauthenticated catalog search and chapter index are public endpoints.
+// Account login and complete chapter bodies require publisher-supported APIs.
+
+struct STVOnlineBook: Identifiable {
+    let host: String
+    let sourceID: String
+    let title: String
+    let author: String
+    let summary: String
+    let chapterCount: Int
+    var id: String { host + ":" + sourceID }
+}
+
+struct STVOnlineChapter: Identifiable {
+    let id: String
+    let title: String
+    let host: String
+    let sourceID: String
+}
+
+enum STVOnlineError: LocalizedError {
+    case invalidResponse
+    case unsupportedPlatform(String)
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "Dữ liệu trả về từ Sáng Tác Việt không đúng định dạng mong đợi."
+        case .unsupportedPlatform(let message):
+            return message
+        }
+    }
+}
+
+enum STVPublicAPI {
+    static let root = "https://sangtacviet.com"
+
+    static func fetch(url: URL) async throws -> Data {
+        guard url.scheme == "https", url.host == "sangtacviet.com" else {
+            throw STVOnlineError.invalidResponse
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 22
+        request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw STVOnlineError.invalidResponse
+        }
+        return data
+    }
+
+    static func endpoint(_ path: String, items: [URLQueryItem]) throws -> URL {
+        guard var c = URLComponents(string: root + path) else {
+            throw STVOnlineError.invalidResponse
+        }
+        c.queryItems = items
+        guard let url = c.url else { throw STVOnlineError.invalidResponse }
+        return url
+    }
+
+    static func field(_ value: Any?) -> String {
+        if let text = value as? String { return text.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let number = value as? NSNumber { return number.stringValue }
+        return ""
+    }
+
+    static func search(_ keyword: String) async throws -> [STVOnlineBook] {
+        let url = try endpoint("/io/searchtp/searchBooks", items: [
+            URLQueryItem(name: "method", value: "search"),
+            URLQueryItem(name: "minc", value: "0"),
+            URLQueryItem(name: "category", value: ""),
+            URLQueryItem(name: "findinname", value: keyword),
+            URLQueryItem(name: "find", value: ""),
+            URLQueryItem(name: "sort", value: ""),
+            URLQueryItem(name: "host", value: ""),
+            URLQueryItem(name: "tag", value: ""),
+            URLQueryItem(name: "step", value: ""),
+            URLQueryItem(name: "p", value: "0")
+        ])
+        let data = try await fetch(url: url)
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rows = root["list"] as? [[String: Any]] else {
+            throw STVOnlineError.invalidResponse
+        }
+        return rows.compactMap { item in
+            let host = field(item["host"])
+            let sourceID = field(item["id"])
+            guard !host.isEmpty, !sourceID.isEmpty else { return nil }
+            return STVOnlineBook(
+                host: host, sourceID: sourceID,
+                title: field(item["tname"]).isEmpty ? field(item["name"]) : field(item["tname"]),
+                author: field(item["hauthor"]).isEmpty ? field(item["author"]) : field(item["hauthor"]),
+                summary: field(item["info"]),
+                chapterCount: Int(field(item["chaptercount"])) ?? 0
+            )
+        }
+    }
+
+    static func chapters(for book: STVOnlineBook) async throws -> [STVOnlineChapter] {
+        let url = try endpoint("/index.php", items: [
+            URLQueryItem(name: "ngmar", value: "chapterlist"),
+            URLQueryItem(name: "h", value: book.host),
+            URLQueryItem(name: "bookid", value: book.sourceID),
+            URLQueryItem(name: "sajax", value: "getchapterlist")
+        ])
+        let data = try await fetch(url: url)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let raw = object["data"] as? String else {
+            throw STVOnlineError.invalidResponse
+        }
+        // Original STV serializes public chapter metadata with -//- rows
+        // and -/- columns; chapter text is deliberately NOT synthesized.
+        return raw.components(separatedBy: "-//-").compactMap { line -> STVOnlineChapter? in
+            let parts = line.components(separatedBy: "-/-")
+            guard parts.count >= 3 else { return nil }
+            let chapterID = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = parts.dropFirst(2).joined(separator: "-/-").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !chapterID.isEmpty, !name.isEmpty else { return nil }
+            return STVOnlineChapter(id: chapterID, title: name, host: book.host, sourceID: book.sourceID)
+        }
+    }
+
+    static func chapterBody(_ chapter: STVOnlineChapter) async throws -> String {
+        // Public guest call only. Some STV hosts reject third-party clients
+        // with "Platform unknown". Never try to fabricate auth/platform tokens.
+        let url = try endpoint("/index.php", items: [
+            URLQueryItem(name: "sajax", value: "readchapter"),
+            URLQueryItem(name: "h", value: chapter.host),
+            URLQueryItem(name: "bookid", value: chapter.sourceID),
+            URLQueryItem(name: "c", value: chapter.id)
+        ])
+        let data = try await fetch(url: url)
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw STVOnlineError.invalidResponse
+        }
+        if let errorText = object["err"] as? String, !errorText.isEmpty {
+            throw STVOnlineError.unsupportedPlatform("Máy chủ STV từ chối yêu cầu đọc chương: " + errorText)
+        }
+        if let chapterText = object["data"] as? String, !chapterText.isEmpty {
+            return chapterText.replacingOccurrences(of: "<[^>]*>", with: "\n", options: .regularExpression)
+        }
+        throw STVOnlineError.unsupportedPlatform("Chưa thể lấy nội dung chương qua API công khai của STV. Cần giao thức iOS được nhà phát triển hỗ trợ.")
+    }
+}
+
+@MainActor
+final class STVOnlineSearchModel: ObservableObject {
+    @Published var results: [STVOnlineBook] = []
+    @Published var loading = false
+    @Published var message: String?
+    func search(_ query: String) async {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { message = "Nhập tên truyện để tìm."; return }
+        loading = true
+        message = nil
+        defer { loading = false }
+        do {
+            results = try await STVPublicAPI.search(term)
+            if results.isEmpty { message = "Không tìm thấy truyện phù hợp." }
+        } catch {
+            results = []
+            message = error.localizedDescription
+        }
+    }
+}
+
+struct STVOnlineSearchView: View {
+    @StateObject private var model = STVOnlineSearchModel()
+    @State private var keyword = ""
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    TextField("Nhập tên truyện trên STV", text: $keyword)
+                        .textFieldStyle(.roundedBorder)
+                        .autocapitalization(.none)
+                        .submitLabel(.search)
+                        .onSubmit { Task { await model.search(keyword) } }
+                    Button("Tìm") { Task { await model.search(keyword) } }
+                        .disabled(model.loading || keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding()
+                if model.loading { ProgressView("Đang tìm truyện…").padding(.bottom, 10) }
+                if let message = model.message {
+                    Text(message).font(.footnote).foregroundColor(.secondary).padding(12)
+                }
+                List(model.results) { book in
+                    NavigationLink(destination: STVOnlineBookDetail(book: book)) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(book.title).font(.headline)
+                            Text(book.author).font(.subheadline).foregroundColor(.secondary)
+                            Text("Nguồn: \(book.host) • \(book.chapterCount) chương")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 5)
+                    }
+                }
+                .listStyle(.plain)
+                Text("Ứng dụng SwiftUI native. Không sử dụng WebView. Đăng nhập STV chưa có giao thức API iOS được xác minh.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+            }
+            .navigationTitle("Tìm truyện STV")
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+@MainActor
+final class STVChapterIndexModel: ObservableObject {
+    @Published var chapters: [STVOnlineChapter] = []
+    @Published var loading = false
+    @Published var message: String?
+    func load(_ book: STVOnlineBook) async {
+        loading = true
+        defer { loading = false }
+        do {
+            chapters = try await STVPublicAPI.chapters(for: book)
+            if chapters.isEmpty { message = "Máy chủ không cung cấp danh sách chương từ nguồn này." }
+            else { message = nil }
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+}
+
+struct STVOnlineBookDetail: View {
+    let book: STVOnlineBook
+    @StateObject private var model = STVChapterIndexModel()
+
+    var body: some View {
+        List {
+            Section(header: Text("Thông tin truyện")) {
+                Text(book.title).font(.title3.bold())
+                Text(book.author).foregroundColor(.secondary)
+                if !book.summary.isEmpty {
+                    Text(book.summary).font(.callout).lineLimit(9)
+                }
+                Text("Nguồn: \(book.host)")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            Section(header: Text("Danh sách chương")) {
+                if model.loading { ProgressView("Đang tải danh sách…") }
+                if let message = model.message { Text(message).foregroundColor(.secondary) }
+                ForEach(model.chapters) { chapter in
+                    NavigationLink(destination: STVOnlineChapterView(chapter: chapter)) {
+                        Text(chapter.title).font(.body).lineLimit(2)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Truyện")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await model.load(book) }
+    }
+}
+
+struct STVOnlineChapterView: View {
+    let chapter: STVOnlineChapter
+    @State private var text = ""
+    @State private var errorMessage: String?
+    @State private var loading = true
+    @AppStorage("stv.native.fontSize") private var fontSize = 19.0
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(chapter.title).font(.title3.bold())
+                if loading { ProgressView("Đang tải chương…") }
+                if let errorMessage = errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+                if !text.isEmpty {
+                    Text(text)
+                        .font(.system(size: fontSize))
+                        .lineSpacing(fontSize * 0.35)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(22)
+        }
+        .background(Color(red: 0.98, green: 0.96, blue: 0.90))
+        .navigationTitle("Đọc chương")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            loading = true
+            defer { loading = false }
+            do { text = try await STVPublicAPI.chapterBody(chapter) }
+            catch { errorMessage = error.localizedDescription }
+        }
     }
 }
