@@ -1,0 +1,36 @@
+name: Inspect STV login network implementation
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-network-functions.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Inspect unmodified public functions for safe single-origin patch
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          files=['/asset/app.v2.js','/app.v2.php']
+          patterns=[
+            r'app\.net\.post\s*=\s*(?:async\s*)?function',
+            r'app\.net\.get\s*=\s*(?:async\s*)?function',
+            r'app\.user\.checklogin\s*=\s*(?:async\s*)?function',
+            r'networkManagerXHR\s*=\s*\{',
+            r'networkManagerXHR\.checkDomains',
+            r'fullUrl\s*\(',
+            r'showLogin\s*:\s*function'
+          ]
+          for path in files:
+            s=requests.get('https://sangtacviet.com'+path,timeout=20).text
+            print('\nFILE',path)
+            for pattern in patterns:
+              matches=list(re.finditer(pattern,s))
+              print('PAT',pattern,len(matches))
+              for m in matches[:1]:
+                t=s[max(0,m.start()-120):min(len(s),m.start()+2600)]
+                print('SNIP',t.replace('\n',' ')[:2700])
+          PY
