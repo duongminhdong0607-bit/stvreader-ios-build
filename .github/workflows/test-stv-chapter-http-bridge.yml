@@ -1,0 +1,103 @@
+name: Test MobileReader 1.3.3 restored HTTP chapter bridge
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - repair/stv-ios-http-bridge.js
+      - repair/stv-ios-chapter-transport.js
+      - repair/patch_app_delegate.py
+      - .github/workflows/test-stv-chapter-http-bridge.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 17
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install browser
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Test original app reader with native HTTP bridge emulation
+        run: |
+          node - <<'JS'
+          const fs=require('fs'),{chromium}=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+            let jsErrors=[];
+            page.on('pageerror',e=>jsErrors.push(e.message.slice(0,230)));
+            await page.addInitScript(()=>{
+              const noop=()=>Promise.resolve({});
+              window.__stvHttpRequests=[];
+              window.Capacitor={
+                platform:'ios',
+                getPlatform:()=> 'ios',
+                nativePromise:async(plugin,method,options)=>{
+                  if(plugin==='CapacitorHttp' && method==='request'){
+                    const url=new URL(options.url);
+                    if(url.hostname!=='sangtacviet.com')throw new Error('Invalid domain');
+                    const headers={...(options.headers||{})};
+                    const transport=headers['x-stv-transport'];
+                    window.__stvHttpRequests.push({pathname:url.pathname,queryKeys:[...url.searchParams.keys()],method:options.method,transport,hasSTVAppHeader:headers['x-requested-with']==='com.sangtacviet.mobilereader',cookiePresent:!!headers.Cookie});
+                    // Browser-based mock cannot set forbidden headers (Cookie,
+                    // Origin, Referer, User-Agent). Browser carries first party
+                    // cookies itself; preserve only allowed publisher headers.
+                    for(const forbidden of ['Cookie','Origin','Referer','User-Agent'])delete headers[forbidden];
+                    const r=await fetch(options.url,{headers,method:options.method,credentials:'same-origin'});
+                    return {status:r.status,headers:{},data:await r.text()};
+                  }
+                  return {};
+                },
+                Plugins:{
+                  App:{addListener:noop,getLaunchUrl:async()=>null,exitApp:noop},
+                  StatusBar:{setStyle:noop,hide:noop,show:noop,setOverlaysWebView:noop},
+                  Keyboard:{addListener:noop},
+                  TextToSpeech:{speak:noop,stop:noop}
+                }
+              };
+            });
+            for(const file of [
+              'stv-ios-compat.js','stv-ios-tts.js',
+              'stv-ios-http-bridge.js','stv-com-session.js',
+              'stv-ios-chapter-transport.js'
+            ]){
+              await page.addInitScript({content:fs.readFileSync('repair/'+file,'utf8')});
+            }
+            await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:55000});
+            await page.waitForTimeout(8000);
+            const state=await page.evaluate(()=>({
+              http:typeof Capacitor?.Plugins?.Http?.get,
+              nativeGet:typeof app?.net?.getCapacitor,
+              readerPatch:!!app?.net?.get?.__stvIOSChapterTransport,
+              theme:typeof app?.theme,
+              domain:app?.net?.networkManagerXHR?.bestDomain?.()
+            }));
+            console.log('INIT',JSON.stringify(state));
+            if(state.http!=='function'||state.nativeGet!=='function'||!state.readerPatch||state.theme!=='object')throw new Error('Original app not initialized with native Http bridge');
+            await page.evaluate(()=>app.fun.showSearch());
+            const inp=page.locator('input.booksearch:visible').first();
+            await inp.fill('Hồng Hoang');await inp.press('Enter');await page.waitForTimeout(3500);
+            await page.getByText('Hồng Hoang chi Minh Hà một kiếm',{exact:true}).first().click({timeout:11000});
+            await page.waitForTimeout(1500);
+            await page.locator('.bookinfo .btnreadnow').last().click();
+            await page.waitForTimeout(1500);
+            const count=await page.locator('.chapterlist [cid]:visible').count();
+            if(!count)throw new Error('No free chapters available for probe');
+            await page.locator('.chapterlist [cid]:visible').first().click();
+            await page.waitForTimeout(9000);
+            const outcome=await page.evaluate(()=>({
+              calls:window.__stvHttpRequests,
+              appReaderError:app?.reader?.opening,
+              visibleTextLength:app?.topPage?.()?.innerText?.length||0,
+              // no chapter contents collected
+            }));
+            console.log('NATIVE_HTTP_REQUESTS',JSON.stringify(outcome.calls));
+            console.log('READER_STATE',JSON.stringify({loading:outcome.appReaderError,textLength:outcome.visibleTextLength}));
+            console.log('JS_ERRORS',JSON.stringify(jsErrors.slice(-8)));
+            if(!outcome.calls.some(x=>x.pathname==='/index.php'&&x.queryKeys.includes('sajax')&&x.transport==='app'&&x.hasSTVAppHeader))throw new Error('Original STV readchapter was not sent through native compatible bridge');
+            await browser.close();
+          })().catch(e=>{console.error('TEST_FAILED',e.stack);process.exit(1)});
+          JS
