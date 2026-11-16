@@ -108,6 +108,20 @@ jobs:
                   readerOpening:app?.reader?.opening,
                   chapters:document.querySelectorAll('.chapterrow,[cid]').length
                 }))));
+
+                const firstChapter=page.locator('.chapterlist [cid]:visible').first();
+                console.log('CHAPTER_BUTTONS',await page.locator('.chapterlist [cid]').count());
+                if(await firstChapter.count()){
+                  try{
+                    await firstChapter.click({timeout:9000});
+                    await page.waitForTimeout(6500);
+                    console.log('AFTER_CHAPTER',JSON.stringify(await page.evaluate(()=>({
+                      page:app?.topPage?.()?.className,
+                      text:app?.topPage?.()?.innerText?.slice(0,700),
+                      readerOpening:app?.reader?.opening
+                    }))));
+                  }catch(e){console.log('CHAPTER_CLICK_ERROR',e.message.slice(0,800))}
+                }
               }catch(e){console.log('READ_BUTTON_ERROR',e.message.slice(0,700))}
             }
             console.log('ERRORS',JSON.stringify(errors.slice(-15)));
