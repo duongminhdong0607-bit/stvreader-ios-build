@@ -1,6 +1,12 @@
 /* STV iOS compatibility shim: guard undefined CSS selectors. No account data is read. */
 (() => {
   "use strict";
+  // STV 1.3.3 uses nativeclick.trigger() for Android/iOS haptic feedback.
+  // The proprietary bridge is absent from this rebuilt iOS IPA.
+  // A safe no-op must not block navigation into a selected book.
+  if (!window.nativeclick || typeof window.nativeclick.trigger !== "function") {
+    window.nativeclick = { trigger() { return undefined; } };
+  }
   function install() {
     const style = window.ui && window.ui.style;
     if (!style || typeof style.create !== "function") return false;
