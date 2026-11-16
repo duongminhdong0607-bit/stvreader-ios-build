@@ -26,20 +26,20 @@
     async function request(options) {
       const target = new URL(options?.url || '', window.location.href);
       if (target.protocol !== 'https:') throw new Error('Only HTTPS is supported');
-      if (target.hostname !== SERVER) {
-        // STV probes alternative mirrors using GET /warp.php. The user chose
-        // sangtacviet.com; tell its domain-selector those mirrors are
-        // disabled without sending cookies or auth data to another site.
-        if (target.pathname === '/warp.php' && (options.method || 'GET').toUpperCase() === 'GET') {
-          return {status: 503, data: '', headers: {}};
-        }
-        throw new Error('Only sangtacviet.com is permitted for STV native requests');
-      }
       const method = (options.method || 'GET').toUpperCase();
+      const headers = {...(options.headers || {})};
+      // STV's Android app can fetch public external chapter hosts as well.
+      // Never forward its sangtacviet.com session or app-specific headers
+      // to any external website.
+      if (target.hostname !== SERVER) {
+        for (const key of Object.keys(headers)) {
+          if (/^(cookie|authorization|origin|referer|x-stv-)/i.test(key)) delete headers[key];
+        }
+      }
       const args = {
         ...options,
         url: target.href,
-        headers: {...(options.headers || {})},
+        headers,
         method,
         connectTimeout: Number(options.timeout || 10000),
         readTimeout: Number(options.timeout || 10000)
