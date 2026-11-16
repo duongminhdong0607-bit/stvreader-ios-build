@@ -1,0 +1,35 @@
+name: Diagnose STV HTML and theme initialization
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: ['.github/workflows/diagnose-stv-html.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect page references and JS initialization
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          url='https://sangtacviet.com/app.v2.php'
+          h=requests.get(url,timeout=25).text
+          print('PAGE',len(h),'bytes')
+          print('START',h[:320].replace('\n',' '))
+          print('END',h[-3900:].replace('\n',' '))
+          print('SCRIPTS',re.findall(r'<script[^>]*src=["\x27]([^"\x27]+)',h,re.I))
+          print('CSS LINKS',re.findall(r'<link[^>]*href=["\x27]([^"\x27]+)',h,re.I)[:28])
+          for needle in ['app.theme.getColorVar','app.theme =','theme: {','app.v2.main.js','app.v2.js','ui.scriptmanager.load','app.init();','locale','customElements.define','app.user','history.showSynchronizer','var app','let app','app.theme','getColorVar']:
+              print('\nTERM',repr(needle),'count',h.count(needle))
+              for m in list(re.finditer(re.escape(needle),h))[:3]:
+                  print(h[max(0,m.start()-220):m.start()+350].replace('\n',' ')[:580])
+          js=requests.get('https://sangtacviet.com/asset/app.v2.js',timeout=25).text
+          print('JS LENGTH',len(js))
+          for needle in ['getColorVar','app.theme','theme =','showSynchronizer','app.init','app.storage','function init','app.isNative']:
+              print('JS TERM',needle,'count',js.count(needle))
+              m=re.search(re.escape(needle),js)
+              if m:print(js[max(0,m.start()-160):m.start()+230].replace('\n',' ')[:400])
+          PY
