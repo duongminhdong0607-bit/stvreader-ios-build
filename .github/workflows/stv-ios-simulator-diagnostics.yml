@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml]
+    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json']
 permissions:
   contents: read
 jobs:
@@ -39,7 +39,7 @@ jobs:
                           for child in view.subviews {if let w=search(child){return w}}
                           return nil
                       }
-                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
+                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,dbLoaded:typeof onDbLoad === 'object' ? onDbLoad.isLoaded : 'absent',historyLoaded:window.app?.history?.loaded,sqlitePlugin:typeof window.Capacitor?.Plugins?.CapacitorSQLite,html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
                       guard let web=search(window?.rootViewController?.view) else {
                           saveSTVSimResult("time=\\(delay) no_webview")
                           return
@@ -93,6 +93,26 @@ jobs:
           cp "$DATA/Documents/stv-sim-results.txt" "$GITHUB_WORKSPACE/diagnostics/" || true
           echo "=== STV Sim ==="
           cat "$GITHUB_WORKSPACE/diagnostics/stv-sim-results.txt" || true
+          python3 - "$GITHUB_WORKSPACE/diagnostics/stv-sim-results.txt" <<'PY'
+          import json,re,sys
+          data=open(sys.argv[1]).read()
+          entries=[]
+          for line in data.splitlines():
+              match=re.search(r'response=Optional\((\{.*\})\) error=nil',line)
+              if match:
+                  try: entries.append(json.loads(match.group(1)))
+                  except Exception: pass
+          print('INIT_STATES',[(x.get('url'),x.get('theme'),x.get('dbLoaded'),x.get('search')) for x in entries])
+          assert entries, 'No WebView diagnostic state could be parsed'
+          final=entries[-1]
+          assert final.get('theme') == 'object', 'app.theme missing at 25 seconds'
+          assert final.get('color') == 'function', 'app.theme.getColorVar missing'
+          assert final.get('search') == 'function', 'STV search missing'
+          assert final.get('sync') == 'function', 'STV history synchronization missing'
+          assert final.get('dbLoaded') is True, 'Database readiness event not fired'
+          assert 'history\nfollow\nbookmark' not in final.get('html',''), 'STV text has not translated'
+          print('PASS: iOS Simulator STV fully initialized')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
