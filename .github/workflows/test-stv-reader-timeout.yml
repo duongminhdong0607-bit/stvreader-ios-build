@@ -63,7 +63,7 @@ jobs:
             await timeoutPage.setContent('<!doctype html><body><div id="reader"><p>Đang tải nội dung...</p></div></body>');
             await timeoutPage.evaluate(()=>window.app={topPage(){return document.getElementById('reader');}});
             await timeoutPage.addScriptTag({content:js});
-            await timeoutPage.clock.fastForward(22500);
+            await timeoutPage.clock.runFor(22500);
             if(!(await timeoutPage.locator('#stv-ios-chapter-failure').isVisible()))throw new Error('Endless spinner not stopped after timeout');
             console.log('TEST_20_SECONDS_TIMEOUT: PASS');
 
@@ -74,7 +74,7 @@ jobs:
             await successPage.locator('.chapterscroller').evaluate((el,txt)=>el.innerText=txt,content);
             await successPage.evaluate(()=>window.app={topPage(){return document.getElementById('reader');}});
             await successPage.addScriptTag({content:js});
-            await successPage.clock.fastForward(23000);
+            await successPage.clock.runFor(23000);
             if(await successPage.locator('#stv-ios-chapter-failure').count())throw new Error('Valid chapter incorrectly reported as failed');
             console.log('TEST_VALID_CHAPTER_UNCHANGED: PASS');
             await browser.close();
