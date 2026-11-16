@@ -22,6 +22,18 @@ s += r'''
 private final class STVActions: NSObject {
     static let shared = STVActions()
     private var observer: NSObjectProtocol?
+    private var didOpenPublisherApp = false
+    // Always use the current publisher page, not the truncated 1.3.2 index.html.
+    // The remote page runs with its own HTTPS origin, retaining its own cookies
+    // for authentication and account-based reading history.
+    private func openCurrentSTVApplication(in web: WKWebView, force: Bool = false) {
+        if didOpenPublisherApp && !force { return }
+        didOpenPublisherApp = true
+        guard let url = URL(string: "https://sangtacviet.com/app.v2.php") else { return }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 40)
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        web.load(request)
+    }
     func prepare() {
         observer = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.installSoon() }
         installSoon()
@@ -34,6 +46,7 @@ private final class STVActions: NSObject {
     }
     private func install() {
         guard let container = currentWindow()?.rootViewController?.view else { return }
+        if let web = findWebView(container) { openCurrentSTVApplication(in: web) }
         if container.viewWithTag(92461) != nil { return }
         let button = UIButton(type: .system)
         button.tag = 92461
@@ -79,13 +92,13 @@ private final class STVActions: NSObject {
             inform("Không tìm thấy giao diện STV. Hãy mở lại ứng dụng.")
             return
         }
-        if command == "refresh" { web.reload(); return }
+        if command == "refresh" { openCurrentSTVApplication(in: web, force: true); return }
         let script: String
         switch command {
         case "search":
-            script = "(()=>{try{if(!window.app||!app.fun||typeof app.fun.showSearch!=='function')return 'notready';app.fun.showSearch();return 'ok'}catch(e){return 'error:'+e.message}})()"
+            script = "(()=>{try{if(!window.app||!app.theme||!app.fun||typeof app.fun.showSearch!=='function')return 'notready';app.fun.showSearch();return 'ok'}catch(e){return 'error:'+e.message}})()"
         case "account":
-            script = "(()=>{try{if(!window.app||!app.fun)return 'notready';if(app.user&&app.user.isLogin&&typeof app.fun.showSetting==='function'){app.fun.showSetting();return 'ok'}if(typeof app.fun.showLogin==='function'){app.fun.showLogin();return 'ok'}return 'notready'}catch(e){return 'error:'+e.message}})()"
+            script = "(()=>{try{if(!window.app||!app.theme||!app.fun)return 'notready';if(app.user&&app.user.isLogin&&typeof app.fun.showSetting==='function'){app.fun.showSetting();return 'ok'}if(typeof app.fun.showLogin==='function'){app.fun.showLogin();return 'ok'}return 'notready'}catch(e){return 'error:'+e.message}})()"
         case "history":
             script = "(()=>{try{if(!window.app||!app.fun)return 'notready';if(!app.user||!app.user.isLogin){if(typeof app.fun.showLogin==='function')app.fun.showLogin();return 'login'}if(app.history&&typeof app.history.showSynchronizer==='function'){app.history.showSynchronizer();return 'ok'}return 'notready'}catch(e){return 'error:'+e.message}})()"
         default: return
@@ -94,7 +107,7 @@ private final class STVActions: NSObject {
             DispatchQueue.main.async {
                 if let error=error { self?.inform("Lỗi STV: " + error.localizedDescription); return }
                 guard let status=result as? String else { return }
-                if status == "notready" { self?.inform("STV chưa tải xong. Hãy bấm Làm mới rồi thử lại.") }
+                if status == "notready" { self?.inform("Giao diện STV chưa khởi tạo xong. Hãy đợi tải trang hoặc chọn Làm mới trang.") }
                 else if status == "login" { self?.inform("Hãy đăng nhập rồi chọn Đồng bộ lịch sử đọc một lần nữa.") }
                 else if status.hasPrefix("error:") { self?.inform(status) }
             }
