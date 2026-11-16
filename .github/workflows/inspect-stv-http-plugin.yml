@@ -1,0 +1,27 @@
+name: Inspect original Android HTTP bridge usage
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-http-plugin.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Inspect public STV HTTP calls for cross-platform adapter
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          s=requests.get('https://sangtacviet.com/asset/app.v2.js',timeout=25).text
+          for needle in ['app.net.getCapacitor = async function','app.net.postCapacitor = async function','if (window.Capacitor && Capacitor.Plugins.Http)', 'app.net.get = async function']:
+            pos=s.find(needle)
+            print('\nFUNCTION',needle,'index',pos)
+            if pos>=0:print(s[pos:pos+3600].replace('\t','  '))
+          t=requests.get('https://sangtacviet.com/app.v2.php',timeout=25).text
+          for needle in ['showLogin: function()', 'app.net.get("/?ajax=checklogin"', 'sajax=readchapter']:
+            pos=t.find(needle)
+            print('\nPAGE',needle,'index',pos)
+            if pos>=0: print(t[pos:pos+1850].replace('\t','  '))
+          PY
