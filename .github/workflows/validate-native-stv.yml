@@ -45,7 +45,7 @@ jobs:
               count=len(results.get('list',[]))
               print('SEARCH_JSON_RESULTS',count)
             else:
-              cards=re.findall(r'<a\\b(?=[^>]*\\bbooksearch\\b)[^>]*href="/truyen/([^/]+)/[^/]+/([^/]+)/"[^>]*>(.*?)</a>',results,re.I|re.S)
+              cards=re.findall(r'<a\b(?=[^>]*\bbooksearch\b)[^>]*href="/truyen/([^/]+)/[^/]+/([^/]+)/"[^>]*>(.*?)</a>',results,re.I|re.S)
               titles=[html.unescape(re.sub(r'<[^>]+>','',re.search(r'<b[^>]*class="searchbooktitle"[^>]*>(.*?)</b>',card[2],re.S).group(1)).strip()) for card in cards if re.search(r'<b[^>]*class="searchbooktitle"[^>]*>(.*?)</b>',card[2],re.S)]
               count=len(titles)
               print('SEARCH_HTML_RESULTS',count,'TITLE_EXAMPLES',titles[:3])
