@@ -1,0 +1,46 @@
+name: Validate STV Native Swift and live public catalog
+on:
+  push:
+    branches: [stv-native-online-reader]
+    paths:
+      - 'STVReader/**'
+      - '.github/workflows/validate-native-stv.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse native Swift code (independent of iOS SDK)
+        run: |
+          set -eu
+          swift --version
+          swiftc -frontend -parse STVReader/STVReaderApp.swift
+          echo "Swift syntax validated"
+      - name: Check HTTPS public catalog and chapter list
+        run: |
+          python3 - <<'PY'
+          import json,urllib.parse,urllib.request
+          base='https://sangtacviet.com'
+          def get(path,items):
+            url=base+path+'?'+urllib.parse.urlencode(items)
+            request=urllib.request.Request(url,headers={'Accept':'application/json, text/plain, */*','User-Agent':'STV Reader Native verification (public, anonymous)'})
+            with urllib.request.urlopen(request,timeout=22) as r:
+              assert r.status==200
+              return json.loads(r.read())
+          try:
+            results=get('/io/searchtp/searchBooks',{'method':'search','minc':'0','category':'','findinname':'Hồng Hoang','find':'','sort':'','host':'','tag':'','step':'','p':'0'})
+            print('SEARCH_RESULTS',len(results.get('list',[])),'code',results.get('code'))
+            assert isinstance(results.get('list'),list) and len(results['list'])>0
+            chapters=get('/index.php',{'ngmar':'chapterlist','h':'uukanshu','bookid':'169690','sajax':'getchapterlist'})
+            raw=chapters.get('data','')
+            parsed=[p.split('-/-',2) for p in raw.split('-//-') if '-/-' in p]
+            print('CHAPTERS',len(parsed),'first',parsed[0][2][:100] if parsed else '')
+            assert len(parsed)>0, 'No public chapters returned'
+          except Exception as e:
+            print('PUBLIC_API_TEST_FAILED',repr(e))
+            raise
+          PY
