@@ -22,6 +22,10 @@ s += r'''
 private final class STVActions: NSObject {
     static let shared = STVActions()
     private var observer: NSObjectProtocol?
+    private var dragCenterX: NSLayoutConstraint?
+    private var dragCenterY: NSLayoutConstraint?
+    private let dragXKey = "stv.mobilereader.floating.x"
+    private let dragYKey = "stv.mobilereader.floating.y"
     private var didOpenPublisherApp = false
     // Always use the current publisher page, not the truncated 1.3.2 index.html.
     // The remote page runs with its own HTTPS origin, retaining its own cookies
@@ -57,14 +61,50 @@ private final class STVActions: NSObject {
         button.layer.cornerRadius = 23
         button.accessibilityLabel = "Tìm kiếm, đăng nhập và đồng bộ lịch sử STV"
         button.addTarget(self, action: #selector(openActions), for: .touchUpInside)
+        // Pan moves the real native button, while a short tap still opens STV.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(dragButton(_:)))
+        pan.maximumNumberOfTouches = 1
+        button.addGestureRecognizer(pan)
         button.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(button)
+        container.layoutIfNeeded()
+        let safe = container.safeAreaLayoutGuide.layoutFrame
+        let width = max(safe.width, 100)
+        let height = max(safe.height, 100)
+        let prefX = CGFloat(UserDefaults.standard.double(forKey: dragXKey))
+        let prefY = CGFloat(UserDefaults.standard.double(forKey: dragYKey))
+        let x = min(max(width * (prefX > 0 ? prefX : 0.93), 27), width - 27)
+        let y = min(max(height * (prefY > 0 ? prefY : 0.86), 27), height - 27)
+        let xConstraint = button.centerXAnchor.constraint(
+            equalTo: container.safeAreaLayoutGuide.leadingAnchor, constant: x)
+        let yConstraint = button.centerYAnchor.constraint(
+            equalTo: container.safeAreaLayoutGuide.topAnchor, constant: y)
+        dragCenterX = xConstraint
+        dragCenterY = yConstraint
         NSLayoutConstraint.activate([
-            button.trailingAnchor.constraint(equalTo: container.safeAreaLayoutGuide.trailingAnchor, constant: -9),
-            button.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -82),
+            xConstraint, yConstraint,
             button.widthAnchor.constraint(equalToConstant: 46),
             button.heightAnchor.constraint(equalToConstant: 46)
         ])
+    }
+    @objc private func dragButton(_ gesture: UIPanGestureRecognizer) {
+        guard let button = gesture.view,
+              let container = button.superview,
+              let xConstraint = dragCenterX,
+              let yConstraint = dragCenterY else { return }
+        let safe = container.safeAreaLayoutGuide.layoutFrame
+        let width = max(54, safe.width)
+        let height = max(54, safe.height)
+        if gesture.state == .changed {
+            let delta = gesture.translation(in: container)
+            xConstraint.constant = min(max(xConstraint.constant + delta.x, 27), width - 27)
+            yConstraint.constant = min(max(yConstraint.constant + delta.y, 27), height - 27)
+            gesture.setTranslation(.zero, in: container)
+            container.layoutIfNeeded()
+        } else if gesture.state == .ended || gesture.state == .cancelled {
+            UserDefaults.standard.set(Double(xConstraint.constant / width), forKey: dragXKey)
+            UserDefaults.standard.set(Double(yConstraint.constant / height), forKey: dragYKey)
+        }
     }
     @objc private func openActions() {
         guard let root=currentWindow()?.rootViewController else { return }
