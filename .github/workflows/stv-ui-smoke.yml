@@ -47,3 +47,35 @@ jobs:
             await browser.close();
           })();
           NODE
+
+      - name: Emulate Capacitor iOS JavaScript environment
+        run: |
+          node - <<'NODE'
+          const {chromium}=require('playwright');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+            const errors=[];
+            page.on('pageerror',e=>errors.push({message:e.message,stack:e.stack?.slice(0,550)}));
+            await page.addInitScript(()=>{
+              const noop=()=>Promise.resolve({});
+              const App={getLaunchUrl:async()=>null,addListener:noop,exitApp:noop};
+              const StatusBar={setStyle:noop,hide:noop,show:noop,setOverlaysWebView:noop};
+              const Keyboard={addListener:noop};
+              window.Capacitor={platform:'ios',getPlatform:()=> 'ios',Plugins:{App,StatusBar,Keyboard}};
+            });
+            try{
+              await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:40000});
+              await page.waitForTimeout(8000);
+              console.log('MOCK_IOS_STATE',JSON.stringify(await page.evaluate(()=>({
+                theme:typeof window.app?.theme,search:typeof window.app?.fun?.showSearch,
+                history:window.app?.history?.loaded,
+                dbLoaded:typeof onDbLoad==='object'?onDbLoad.isLoaded:null,
+                platform:window.app?.platform?.isIOS,
+                text:document.body?.innerText?.slice(0,180)
+              }))));
+              console.log('MOCK_IOS_ERRORS',JSON.stringify(errors.slice(0,20)));
+            }catch(e){console.log('MOCK_TEST_ERROR',e.message)}
+            await browser.close();
+          })();
+          NODE
