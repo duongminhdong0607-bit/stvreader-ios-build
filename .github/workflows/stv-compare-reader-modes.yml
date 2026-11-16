@@ -1,0 +1,84 @@
+name: Compare STV chapter response in web and Capacitor modes
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/stv-compare-reader-modes.yml]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Test anonymous reader in both modes without exposing chapter contents
+        run: |
+          node - <<'JS'
+          const {chromium}=require('playwright'),fs=require('fs');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            for(const mode of ['web','capacitor']){
+              const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+              const errors=[],responseCodes=[];
+              page.on('pageerror',e=>errors.push(e.message.slice(0,230)));
+              page.on('response',async r=>{
+                try{
+                  const u=new URL(r.url());
+                  if(u.hostname==='sangtacviet.com'&&u.searchParams.has('sajax')&&u.searchParams.get('sajax')==='readchapter'){
+                    const body=await r.text();
+                    let j={};try{j=JSON.parse(body)}catch(e){}
+                    responseCodes.push({status:r.status(),code:j.code,error:String(j.err||j.error||'').slice(0,220),type:r.headers()['content-type'],bodyLength:body.length,hasData:!!j.data});
+                  }
+                }catch(e){}
+              });
+              if(mode==='capacitor'){
+                for(const file of ['stv-ios-compat.js','stv-ios-tts.js','stv-com-session.js']){
+                  await page.addInitScript({content:fs.readFileSync('repair/'+file,'utf8')});
+                }
+                await page.addInitScript(()=>{
+                  const noop=()=>Promise.resolve({});
+                  window.Capacitor={platform:'ios',getPlatform:()=> 'ios',Plugins:{
+                    App:{getLaunchUrl:async()=>null,addListener:noop,exitApp:noop},
+                    StatusBar:{setStyle:noop,hide:noop,show:noop,setOverlaysWebView:noop},
+                    Keyboard:{addListener:noop},TextToSpeech:{speak:noop,stop:noop}
+                  }};
+                });
+              } else {
+                await page.addInitScript(()=>{ window.nativeclick={trigger(){}}; });
+              }
+              try {
+                await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:55000});
+                await page.waitForTimeout(7000);
+                const ready=await page.evaluate(()=>({theme:typeof window.app?.theme,search:typeof window.app?.fun?.showSearch,platform:window.Capacitor?.getPlatform?.()}));
+                console.log('READY',mode,JSON.stringify(ready));
+                if(ready.search==='function'){
+                  await page.evaluate(()=>app.fun.showSearch());
+                  const input=page.locator('input.booksearch:visible').first();
+                  await input.fill('Hồng Hoang');
+                  await input.press('Enter');
+                  await page.waitForTimeout(3500);
+                  await page.getByText('Hồng Hoang chi Minh Hà một kiếm',{exact:true}).first().click({timeout:12000});
+                  await page.waitForTimeout(1700);
+                  await page.locator('.bookinfo .btnreadnow').last().click({timeout:10000});
+                  await page.waitForTimeout(1600);
+                  const count=await page.locator('.chapterlist [cid]:visible').count();
+                  if(count){
+                    await page.locator('.chapterlist [cid]:visible').first().click({timeout:12000});
+                    await page.waitForTimeout(9000);
+                  }
+                  const body=await page.evaluate(()=>app?.topPage?.()?.innerText||'');
+                  console.log('READ_RESULT',mode,JSON.stringify({chapterRows:count,hasConnectionFailure:body.includes('Kết nối tới máy chủ thất bại'),hasAccessDenied:body.includes('Platform unknown'),visibleCharacterCount:body.length,hasLoading:body.includes('Đang tải')}));
+                }
+              }catch(e){console.log('READ_FAILURE',mode,e.message.slice(0,330))}
+              console.log('CHAPTER_HTTP',mode,JSON.stringify(responseCodes));
+              console.log('JS_ERRORS',mode,JSON.stringify(errors.slice(-4)));
+              await page.close();
+            }
+            await browser.close();
+          })().catch(e=>{console.error('FATAL',e.stack);process.exit(1)});
+          JS
