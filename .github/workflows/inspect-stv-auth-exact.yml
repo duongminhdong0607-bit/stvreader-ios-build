@@ -1,0 +1,32 @@
+name: Analyze exact login and reader functions
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-auth-exact.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Locate function boundaries and request styles
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          base='https://sangtacviet.com'
+          for f in ['/app.v2.php','/asset/app.v2.js','/asset/app.v2.bookdisplay.js']:
+            s=requests.get(base+f,timeout=25).text
+            print('\nFILE',f)
+            patterns=[r'ajax=login',r'ajax=checklogin',r'login\s*:\s*function',r'login\s*=\s*function',r'login\s*\(',r'showLogin\s*:\s*function',r'getChapterData',r'getChapterContent',r'getChapterText',r'sajax=readchapter',r'sajax=.*chapter',r'code\s*==\s*7',r'Platform unknown',r'Cookies',r'withCredentials']
+            for pat in patterns:
+              matches=list(re.finditer(pat,s,re.I))
+              if not matches:continue
+              print('MATCH',pat,len(matches))
+              for match in matches[:2]:
+                a=max(0,match.start()-440);b=min(len(s),match.end()+900)
+                t=s[a:b]
+                # Never print raw user credentials; sources are public but trim calls
+                print('CODE',t.replace('\n',' ').replace('\r',' ')[:1300])
+          PY
