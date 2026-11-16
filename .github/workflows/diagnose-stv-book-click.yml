@@ -94,7 +94,24 @@ jobs:
               displayed:[...document.querySelectorAll('div')].filter(e=>e.offsetWidth>0 && /chapter|đọc truyện/i.test(e.id||'')).slice(0,8).map(e=>e.id)
             }));
             console.log('AFTER_CLICK',JSON.stringify(after));
+            console.log('BOOK_PAGE_OPEN',!!after.topPage?.class?.includes('bookinfo'));
+            if(!after.topPage?.class?.includes('bookinfo')) throw new Error('Tapping book did not open bookinfo');
+            const readButton=page.locator('.bookinfo .btnreadnow').last();
+            console.log('READ_BUTTON_COUNT',await readButton.count());
+            if(await readButton.count()){
+              try {
+                await readButton.click({timeout:8000});
+                await page.waitForTimeout(6000);
+                console.log('AFTER_READ',JSON.stringify(await page.evaluate(()=>({
+                  page:app?.topPage?.()?.className,
+                  text:app?.topPage?.()?.innerText?.slice(0,600),
+                  readerOpening:app?.reader?.opening,
+                  chapters:document.querySelectorAll('.chapterrow,[cid]').length
+                }))));
+              }catch(e){console.log('READ_BUTTON_ERROR',e.message.slice(0,700))}
+            }
             console.log('ERRORS',JSON.stringify(errors.slice(-15)));
+            if(errors.some(x=>x.message.includes('nativeclick is not defined'))) throw new Error('nativeclick regression');
             console.log('CONSOLE_ERRORS',JSON.stringify(messages.slice(-15)));
             console.log('FAILED_REQUESTS',JSON.stringify(requests.slice(-15)));
             await page.screenshot({path:'stv-search-after.png',fullPage:false});
