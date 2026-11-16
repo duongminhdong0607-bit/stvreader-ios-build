@@ -14,6 +14,7 @@ jobs:
         run: |
           mkdir -p /tmp/stv-debug
           curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.js -o /tmp/stv-debug/app.v2.js
+          curl -fsSL --retry 2 --max-time 30 'https://sangtacviet.com/stv.ui.js?v=1.360' -o /tmp/stv-debug/stv.ui.js
           curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.db.js -o /tmp/stv-debug/app.v2.db.js
           curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.config.js -o /tmp/stv-debug/app.v2.config.js
           curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/app.v2.php -o /tmp/stv-debug/app.v2.html
