@@ -1,13 +1,13 @@
 {
   "appId": "com.stvreader.capacitor.rebuild",
-  "appName": "STV MobileReader - Rebuild",
+  "appName": "STV MobileReader - Search Sync",
   "webDir": "www",
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
     },
     "CapacitorHttp": {
-      "enabled": true
+      "enabled": false
     },
     "CapacitorSQLite": {
       "iosIsEncryption": false
@@ -16,6 +16,10 @@
   "server": {
     "hostname": "sangtacviet.com",
     "iosScheme": "capacitor",
-    "url": "https://sangtacviet.com/app.v2.php"
+    "url": "https://sangtacviet.com/app.v2.php",
+    "allowNavigation": [
+      "sangtacviet.com",
+      "*.sangtacviet.com"
+    ]
   }
 }
