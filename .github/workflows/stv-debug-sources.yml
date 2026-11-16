@@ -1,0 +1,25 @@
+name: Collect public STV JS for debugging
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/stv-debug-sources.yml]
+permissions:
+  contents: read
+jobs:
+  retrieve:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch public JS files to inspect initialization dependencies
+        run: |
+          mkdir -p /tmp/stv-debug
+          curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.js -o /tmp/stv-debug/app.v2.js
+          curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.db.js -o /tmp/stv-debug/app.v2.db.js
+          curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/asset/app.v2.config.js -o /tmp/stv-debug/app.v2.config.js
+          curl -fsSL --retry 2 --max-time 30 https://sangtacviet.com/app.v2.php -o /tmp/stv-debug/app.v2.html
+          for f in /tmp/stv-debug/*; do echo "$f $(wc -c < "$f")"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STV-public-sources-for-debug
+          path: /tmp/stv-debug/
+          retention-days: 1
