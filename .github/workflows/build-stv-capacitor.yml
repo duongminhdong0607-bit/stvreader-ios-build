@@ -1,4 +1,4 @@
-name: Build STV MobileReader 1.3.3 COM login fix
+name: Build STV MobileReader 1.3.3 draggable STV + chapter HTTP
 on:
   push:
     branches: [stv-capacitor-rebuild]
@@ -6,14 +6,11 @@ on:
       - 'repair/**'
       - '.github/workflows/build-stv-capacitor.yml'
   workflow_dispatch:
-concurrency:
-  group: stv-mobile-1-3-3-com-login-fix
-  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     timeout-minutes: 55
     defaults:
       run:
@@ -81,11 +78,11 @@ jobs:
           xcrun lipo -archs "$APP/App" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/App.app
-          zip -qry STVMobileReader-1.3.3-COM-Login-Reader-unsigned.ipa Payload
-          unzip -t STVMobileReader-1.3.3-COM-Login-Reader-unsigned.ipa > /dev/null
-          ls -lh STVMobileReader-1.3.3-COM-Login-Reader-unsigned.ipa
+          zip -qry STVMobileReader-1.3.3-NutSTV-KeoTha-HTTP-unsigned.ipa Payload
+          unzip -t STVMobileReader-1.3.3-NutSTV-KeoTha-HTTP-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-1.3.3-NutSTV-KeoTha-HTTP-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVMobileReader-1.3.3-COM-Login-Reader-IPA
-          path: repair/STVMobileReader-1.3.3-COM-Login-Reader-unsigned.ipa
+          name: STVMobileReader-1.3.3-NutSTV-KeoTha-HTTP-IPA
+          path: repair/STVMobileReader-1.3.3-NutSTV-KeoTha-HTTP-unsigned.ipa
           retention-days: 7
