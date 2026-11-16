@@ -1,0 +1,30 @@
+name: Validate official STV 1.3.3 APK against uploaded copy
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/verify-stv-133-apk.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Retrieve intact APK
+        run: |
+          set -euo pipefail
+          url='https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk'
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o /tmp/stvmobilereader-1.3.3.apk "$url"
+          python3 - <<'PY'
+          import hashlib,zipfile,os,json
+          f='/tmp/stvmobilereader-1.3.3.apk'
+          h=hashlib.sha256(open(f,'rb').read()).hexdigest()
+          print('APK_SIZE',os.path.getsize(f))
+          print('APK_SHA256',h)
+          with zipfile.ZipFile(f) as z:
+            print('APK_ZIP_ENTRIES',len(z.namelist()),'test',z.testzip())
+            for name in ('assets/capacitor.config.json','assets/capacitor.plugins.json','assets/public/index.html'):
+              print('FOUND',name,name in z.namelist())
+          print('MATCH_UPLOADED_APK',h=='69c64e7caf09a1ad7edf00008065f35dda6eb65ffc0e6779d2a10fa7c1c7de40')
+          PY
