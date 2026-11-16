@@ -1,0 +1,93 @@
+name: Diagnose STV reading and login transport
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/diagnose-reading-login-transport.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Chromium
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Inspect guest chapter HTTP calls without credentials
+        run: |
+          node - <<'JS'
+          const {chromium} = require('playwright'),fs=require('fs');
+          (async()=>{
+            const b=await chromium.launch({headless:true});
+            const page=await b.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+            let net=[], errors=[];
+            page.on('pageerror',e=>errors.push(e.message.slice(0,350)));
+            page.on('request',r=>{
+              try{
+                let u=new URL(r.url());
+                if(u.hostname.includes('sangtacviet')){
+                  net.push({stage:'request',origin:u.origin,path:u.pathname,queryKeys:[...u.searchParams.keys()].filter(k=>!/auth|access|cookie|token|password|psw/i.test(k)),method:r.method()})
+                }
+              }catch(e){}
+            });
+            page.on('response',r=>{
+              try {
+                const u=new URL(r.url());
+                if(u.hostname.includes('sangtacviet')){
+                  net.push({stage:'response',origin:u.origin,path:u.pathname,status:r.status()})
+                }
+              }catch(e){}
+            });
+            page.on('requestfailed',r=>{
+              try {
+                const u=new URL(r.url());
+                if(u.hostname.includes('sangtacviet')){
+                  net.push({stage:'failed',origin:u.origin,path:u.pathname,error:r.failure()?.errorText?.slice(0,140)})
+                }
+              } catch(e){}
+            });
+            await page.addInitScript({content:fs.readFileSync('repair/stv-ios-compat.js','utf8')});
+            await page.addInitScript({content:fs.readFileSync('repair/stv-ios-tts.js','utf8')});
+            await page.addInitScript(()=> {
+              const noop=()=>Promise.resolve({});
+              window.Capacitor={getPlatform:()=> 'ios',platform:'ios',Plugins:{App:{addListener:noop,getLaunchUrl:async()=>null,exitApp:noop},StatusBar:{setStyle:noop,setOverlaysWebView:noop,hide:noop,show:noop},Keyboard:{addListener:noop},TextToSpeech:{speak:noop,stop:noop}}};
+            });
+            await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:55000});
+            await page.waitForTimeout(7000);
+            console.log('DOMAINS',JSON.stringify(await page.evaluate(()=>({
+              currentOrigin:location.origin,
+              fullUrl:typeof fullUrl==='function' ? fullUrl('/?ajax=checklogin').replace(/(access|token)=[^&]*/gi,'$1=REDACTED'):undefined,
+              selected:app?.net?.networkManagerXHR?.bestDomain?.(),
+              status:app?.net?.networkManagerXHR?.domains,
+              capacitorNativeHTTP:typeof app?.net?.getCapacitor,
+              cookiePresent:document.cookie.includes('access='),
+              isLogin:app?.user?.isLogin
+            }))));
+            await page.evaluate(()=>app.fun.showSearch());
+            const input=page.locator('input.booksearch:visible').first();
+            await input.fill('Hồng Hoang');
+            await input.press('Enter');
+            await page.waitForTimeout(3500);
+            await page.getByText('Hồng Hoang chi Minh Hà một kiếm',{exact:true}).first().click();
+            await page.waitForTimeout(2000);
+            console.log('BOOKPAGE',await page.evaluate(()=>app?.topPage?.()?.className));
+            await page.locator('.bookinfo .btnreadnow').last().click();
+            await page.waitForTimeout(2000);
+            const chapters=page.locator('.chapterlist [cid]:visible');
+            console.log('CHAPTERS',await chapters.count());
+            await chapters.first().click();
+            await page.waitForTimeout(11000);
+            console.log('READPAGE',JSON.stringify(await page.evaluate(()=>({
+              page:app?.topPage?.()?.className,
+              title:app?.topPage?.()?.querySelector('.chaptertitle')?.textContent?.slice(0,130),
+              message:app?.topPage?.()?.innerText?.slice(0,750),
+              loaded:app?.reader?.opening
+            }))));
+            console.log('NETWORK',JSON.stringify(net.slice(-75)));
+            console.log('JS_ERRORS',JSON.stringify(errors.slice(-10)));
+            await b.close();
+          })().catch(e=>{console.error('DIAGNOSTIC_FAILED',e.stack);process.exit(1)});
+          JS
