@@ -27,10 +27,20 @@ jobs:
           base='https://sangtacviet.com'
           def get(path,items):
             url=base+path+'?'+urllib.parse.urlencode(items)
-            request=urllib.request.Request(url,headers={'Accept':'application/json, text/plain, */*','User-Agent':'STV Reader Native verification (public, anonymous)'})
+            request=urllib.request.Request(url,headers={
+              'Accept':'application/json, text/plain, */*',
+              'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+              'Referer':'https://sangtacviet.com/app.v2.php',
+              'Accept-Language':'vi-VN,vi;q=0.9'
+            })
             with urllib.request.urlopen(request,timeout=22) as r:
               assert r.status==200
-              return json.loads(r.read())
+              raw=r.read()
+              print('HTTP_RESPONSE',r.status,r.headers.get('Content-Type'),len(raw))
+              try: return json.loads(raw)
+              except json.JSONDecodeError:
+                print('HTTP_NON_JSON_SAMPLE',raw[:300].decode('utf-8','replace'))
+                raise
           try:
             results=get('/io/searchtp/searchBooks',{'method':'search','minc':'0','category':'','findinname':'Hồng Hoang','find':'','sort':'','host':'','tag':'','step':'','p':'0'})
             print('SEARCH_RESULTS',len(results.get('list',[])),'code',results.get('code'))
