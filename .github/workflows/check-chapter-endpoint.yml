@@ -1,0 +1,34 @@
+name: Check native chapter endpoint compatibility
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-native-online-reader]
+    paths: [.github/workflows/check-chapter-endpoint.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Probe publisher's public web chapter endpoint anonymously
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json
+          root='https://sangtacviet.com/index.php'
+          for chapter in ['6044','72096']:
+            for style in ['','0','1']:
+              qs=urllib.parse.urlencode({'ajax':'readchapter','bookid':'169690','h':'uukanshu','c':chapter,'sty':style})
+              url=root+'?'+qs
+              req=urllib.request.Request(url,method='POST',data=b'',headers={'Content-Type':'application/x-www-form-urlencoded','User-Agent':'Mozilla/5.0','Referer':'https://sangtacviet.com/truyen/uukanshu/1/169690/'})
+              try:
+                with urllib.request.urlopen(req,timeout=15) as r:
+                  data=r.read()
+                  try:
+                    j=json.loads(data)
+                    print('RESULT',chapter,'sty',repr(style),'HTTP',r.status,'CODE',j.get('code'),'ERROR',str(j.get('err',''))[:130],'HAS_CHAPTER_DATA',bool(j.get('data')),'LEN',len(str(j.get('data',''))))
+                  except Exception:
+                    print('NON_JSON',chapter,repr(style),r.status,data[:140])
+              except Exception as e:
+                print('NETWORK_ERROR',chapter,repr(style),str(e)[:150])
+          PY
