@@ -1,0 +1,25 @@
+name: Inspect STV history and search functions
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-history.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find sync search and user logic in public JS
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          s=requests.get('https://sangtacviet.com/asset/app.v2.js',timeout=20).text
+          for pattern in ['app.history =','history: {','synchronize: function','savehistory&client','loadhistory','showSearch:','showLogin:','app.fun.showSearch','app.search =','app.search','app.user =','isLogin','app.net.post("/?ajax=savehistory']:
+              matches=list(re.finditer(re.escape(pattern),s,re.I))
+              print('PATTERN',pattern,'count',len(matches))
+              for m in matches[:3]:
+                  print(s[max(0,m.start()-480):min(len(s),m.end()+800)].replace('\n',' ')[:1250])
+                  print('----')
+          PY
