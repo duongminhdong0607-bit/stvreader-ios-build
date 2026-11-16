@@ -122,5 +122,28 @@ private final class STVActions: NSObject {
     }
 }
 '''
+# Install a minimal compatibility shim in the WebKit main content world before STV JS executes.
+# This guards the publisher's missing CSS selector during iOS platform setup.
+import json
+compat=Path("stv-ios-compat.js").read_text(encoding="utf-8")
+js_literal=json.dumps(compat, ensure_ascii=False)
+s=s.replace(
+    "private var didOpenPublisherApp = false",
+    "private var didOpenPublisherApp = false\n    private weak var shimmedWebView: WKWebView?",
+    1
+)
+old="        web.load(request)"
+if old not in s:
+    raise SystemExit("Cannot locate navigation request for WebKit injection")
+injection=(
+    "        if shimmedWebView !== web {\n"
+    + "            let compatibilityJS = " + js_literal + "\n"
+    + "            web.configuration.userContentController.addUserScript(WKUserScript(source: compatibilityJS, injectionTime: .atDocumentStart, forMainFrameOnly: true))\n"
+    + "            shimmedWebView = web\n"
+    + "        }\n"
+    + "        web.load(request)"
+)
+s=s.replace(old,injection,1)
 p.write_text(s)
-print("Native STV action menu patched successfully")
+print("Patched STV iOS compatibility bridge and native action menu")
+
