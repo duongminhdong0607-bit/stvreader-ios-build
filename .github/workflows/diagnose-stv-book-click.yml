@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/diagnose-stv-book-click.yml]
+    paths: [.github/workflows/diagnose-stv-book-click.yml, 'repair/stv-ios-compat.js']
 permissions:
   contents: read
 jobs:
@@ -85,6 +85,9 @@ jobs:
             }
             await page.waitForTimeout(5500);
             const after=await page.evaluate(()=>({
+              nativeclick:typeof window.nativeclick?.trigger,
+              topPage:(()=>{const p=app?.topPage?.();return p?{tag:p.tagName,class:p.className,id:p.id,attr:p.getAttribute?.('data-name'),text:p.innerText?.slice(0,500)}:null})(),
+              bookviews:[...document.querySelectorAll('bookinfo,.bookinfo,[data-page="bookinfo"],.book-page-title')].slice(0,8).map(e=>({tag:e.tagName,class:e.className,text:e.innerText?.slice(0,160)})),
               href:location.href,body:document.body.innerText.slice(0,1100),
               tabs:document.querySelectorAll('.smtab').length,
               log:window.__clickLog,
