@@ -126,6 +126,7 @@ private final class STVActions: NSObject {
 # This guards the publisher's missing CSS selector during iOS platform setup.
 import json
 compat=Path("stv-ios-compat.js").read_text(encoding="utf-8")
+compat += "\n" + Path("stv-ios-tts.js").read_text(encoding="utf-8")
 js_literal=json.dumps(compat, ensure_ascii=False)
 s=s.replace(
     "private var didOpenPublisherApp = false",
