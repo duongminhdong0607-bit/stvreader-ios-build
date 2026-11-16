@@ -10,6 +10,7 @@
   let lastFailure = "";
   let lastErrorText = "";
   let wrapped = false;
+  const startThresholdMs = 20000;
 
   function wrapTransport() {
     const net = window.app?.net;
@@ -79,23 +80,36 @@
     plugin.get = observedGet;
   }
 
+  // The publisher's chapter reader has an empty topPage().className.
+  // Do not rely solely on .chapterdisplay or .readchapter selectors.
+  // Use the visible reader loading label and supported DOM state instead.
   function currentReaderPage() {
     const page = window.app?.topPage?.();
+    const visibleText = (document.body?.innerText || "");
+    if (!page && !/Đang tải nội dung|Đang tải chương|Kết nối tới máy chủ thất bại/i.test(visibleText)) return null;
+    if (/Đang tải nội dung|Đang tải chương|Kết nối tới máy chủ thất bại/i.test(visibleText)) {
+      return page || document.body;
+    }
     if (!page) return null;
-    if (page.querySelector(".chapterdisplay") ||
-        (typeof page.className === "string" && page.className.includes("readchapter"))) {
+    if (page.querySelector?.(".chapterdisplay, .chapterscroller, .chapter-reader") ||
+        (typeof page.className === "string" && /readchapter|readpage/i.test(page.className))) {
       return page;
     }
     return null;
   }
 
   function stillLoading(page) {
-    const scroller = page?.querySelector(".chapterscroller");
-    const chapterText = (scroller?.innerText || "").trim();
-    if (chapterText.length > 280 && !/Đang tải nội dung/i.test(chapterText)) return false;
-    const visible = (page.innerText || "").trim();
-    return /Đang tải nội dung|Đang tải chương|Kết nối tới máy chủ thất bại/i.test(visible)
-      || (chapterText.length === 0 && visible.length < 130);
+    const pageText = (page?.innerText || "").trim();
+    const visibleText = (document.body?.innerText || "").trim();
+    if (/Đang tải nội dung|Đang tải chương|Kết nối tới máy chủ thất bại/i.test(visibleText)) return true;
+
+    // Only handle the reader when it is still explicitly empty.
+    // A valid chapter with real visible text must never show this error.
+    const content = page?.querySelector?.(".chapterscroller, .chapter-content, .readcontent");
+    const bodyText = (content?.innerText || "").trim();
+    if (bodyText.length > 220) return false;
+    if (lastFailure === "7" || lastFailure === "network") return true;
+    return false;
   }
 
   function presentError() {
@@ -129,15 +143,26 @@
       root.remove();
       pendingSince = Date.now();
       lastFailure = "";
-      try { window.app?.reader?.reloadCurrentChapter?.(true); }
-      catch(_err) { /* preserve original reader's error handling */ }
+      try {
+        // The original app does not expose reloadCurrentChapter on all versions.
+        // Force an actual retry rather than a no-op optional call.
+        const fn = window.app?.reader?.reloadCurrentChapter;
+        if (typeof fn === "function") {
+          fn.call(window.app.reader, true);
+        } else {
+          window.location.reload();
+        }
+      } catch (_err) {
+        window.location.reload();
+      }
     });
     const dismiss = document.createElement("button");
     dismiss.textContent = "Đóng";
     dismiss.style.cssText = "background:#ddd;color:#222;padding:10px 14px;border:0;border-radius:9px;font-size:15px;";
     dismiss.addEventListener("click", () => {
       root.remove();
-      pendingSince = Date.now();
+      // Avoid immediate re-opening after dismissing this failure.
+      pendingSince = Date.now() + 60000;
     });
     actions.append(retry,dismiss);
     root.append(title,detail,actions);
@@ -166,7 +191,7 @@
       return;
     }
     if (!pendingSince) pendingSince = Date.now();
-    const delay = lastFailure === "7" ? 4000 : 22000;
+    const delay = lastFailure === "7" ? 2500 : startThresholdMs;
     if (Date.now() - pendingSince > delay) presentError();
   }, 1000);
 })();
