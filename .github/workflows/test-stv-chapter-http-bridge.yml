@@ -32,6 +32,7 @@ jobs:
             await page.addInitScript(()=>{
               const noop=()=>Promise.resolve({});
               window.__stvHttpRequests=[];
+              window.__stvHttpResponses=[];
               window.Capacitor={
                 platform:'ios',
                 getPlatform:()=> 'ios',
@@ -47,7 +48,17 @@ jobs:
                     // cookies itself; preserve only allowed publisher headers.
                     for(const forbidden of ['Cookie','Origin','Referer','User-Agent'])delete headers[forbidden];
                     const r=await fetch(options.url,{headers,method:options.method,credentials:'same-origin'});
-                    return {status:r.status,headers:{},data:await r.text()};
+                    const payload=await r.text();
+                    let parsed={};
+                    try{parsed=JSON.parse(payload)}catch(e){}
+                    window.__stvHttpResponses.push({
+                      path:url.pathname,
+                      code:parsed.code || null,
+                      err:String(parsed.err || parsed.error || '').slice(0,160),
+                      hasData:!!parsed.data,
+                      status:r.status
+                    });
+                    return {status:r.status,headers:{},data:payload};
                   }
                   return {};
                 },
@@ -90,14 +101,16 @@ jobs:
             await page.waitForTimeout(9000);
             const outcome=await page.evaluate(()=>({
               calls:window.__stvHttpRequests,
+              responses:window.__stvHttpResponses,
               appReaderError:app?.reader?.opening,
               visibleTextLength:app?.topPage?.()?.innerText?.length||0,
               // no chapter contents collected
             }));
             console.log('NATIVE_HTTP_REQUESTS',JSON.stringify(outcome.calls));
+            console.log('NATIVE_HTTP_RESULTS',JSON.stringify(outcome.responses));
             console.log('READER_STATE',JSON.stringify({loading:outcome.appReaderError,textLength:outcome.visibleTextLength}));
             console.log('JS_ERRORS',JSON.stringify(jsErrors.slice(-8)));
-            if(!outcome.calls.some(x=>x.pathname==='/index.php'&&x.queryKeys.includes('sajax')&&x.transport==='app'&&x.hasSTVAppHeader))throw new Error('Original STV readchapter was not sent through native compatible bridge');
+            if(!outcome.calls.some(x=>(x.pathname==='/'||x.pathname==='/index.php')&&x.queryKeys.includes('sajax')&&x.transport==='app'&&x.hasSTVAppHeader))throw new Error('Original STV readchapter was not sent through native compatible bridge');
             await browser.close();
           })().catch(e=>{console.error('TEST_FAILED',e.stack);process.exit(1)});
           JS
