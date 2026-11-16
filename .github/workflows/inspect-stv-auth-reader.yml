@@ -1,0 +1,36 @@
+name: Inspect STV current login and chapter request sources
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-auth-reader.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Read public app implementation (no private credentials)
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          base='https://sangtacviet.com'
+          paths=['/asset/app.v2.js','/asset/app.v2.bookdisplay.js','/asset/app.v2.config.js','/app.v2.php']
+          keys=['showLogin','login: function','login:function','ajax=login','ajax=checklogin','ajax=readchapter','sajax=readchapter','getChapter','getChapterText','getChapterContent','Platform unknown','bestDomain','readchapter','readChapter','networkManagerXHR','cookies','localStorage','CapacitorHttp']
+          for p in paths:
+            try:
+              r=requests.get(base+p,timeout=25)
+              t=r.text
+              print('=== FILE',p,r.status_code,len(t))
+              if r.status_code!=200:continue
+              for key in keys:
+                hits=list(re.finditer(re.escape(key),t,re.I))
+                if not hits:continue
+                print('TERM',key,'matches',len(hits))
+                for m in hits[:2]:
+                  sn=t[max(0,m.start()-300):min(len(t),m.end()+550)]
+                  sn=re.sub(r'(?i)(password|passwd|authToken|accessToken|secret)[^,\n;]{0,75}',r'\1=REDACTED',sn)
+                  print('NEAR',sn.replace('\n',' ')[:900])
+            except Exception as e:print('FAIL',p,repr(e))
+          PY
