@@ -1,7 +1,7 @@
-name: Build STV Reader Native IPA
+name: Build STV Reader Native STV Catalog IPA
 on:
   push:
-    branches: [main]
+    branches: [stv-native-online-reader]
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,11 +24,11 @@ jobs:
           xcrun lipo -archs "$APP/STVReader" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/STVReader.app
-          zip -qry STVReader-Native-unsigned.ipa Payload
-          unzip -t STVReader-Native-unsigned.ipa > /dev/null
-          ls -lh STVReader-Native-unsigned.ipa
+          zip -qry STVReader-Native-Online-unsigned.ipa Payload
+          unzip -t STVReader-Native-Online-unsigned.ipa > /dev/null
+          ls -lh STVReader-Native-Online-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVReader-Native-unsigned-IPA
-          path: STVReader-Native-unsigned.ipa
+          name: STVReader-Native-Online-IPA
+          path: STVReader-Native-Online-unsigned.ipa
           retention-days: 7
