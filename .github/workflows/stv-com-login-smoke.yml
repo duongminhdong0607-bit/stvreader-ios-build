@@ -1,0 +1,86 @@
+name: Verify STV .com login transport and reader
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - repair/stv-com-session.js
+      - repair/patch_app_delegate.py
+      - .github/workflows/stv-com-login-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Test first-party login request with mocked response (no real credentials)
+        run: |
+          node - <<'JS'
+          const {chromium}=require('playwright'),fs=require('fs');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+            const errors=[], outOfDomain=[];
+            let loginRequest=null;
+            page.on('pageerror',e=>errors.push(e.message.slice(0,220)));
+            page.on('dialog',async d=>{await d.dismiss()});
+            page.on('request',r=>{
+              if(/index\.php\?ajax=login/.test(r.url()) && !r.url().startsWith('https://sangtacviet.com/')){
+                outOfDomain.push(new URL(r.url()).host);
+              }
+            });
+            await page.route(/\/index\.php\?ajax=login/,async route=>{
+              const req=route.request();
+              const body=req.postData()||'';
+              loginRequest={
+                method:req.method(),
+                host:new URL(req.url()).host,
+                hasUsername:body.includes('username='),
+                hasPassword:body.includes('psw='),
+                // Never log any submitted values.
+              };
+              await route.fulfill({status:200,contentType:'text/plain',body:'invalid-test-login'});
+            });
+            for(const name of ['stv-ios-compat.js','stv-ios-tts.js','stv-com-session.js']){
+              await page.addInitScript({content:fs.readFileSync('repair/'+name,'utf8')});
+            }
+            await page.addInitScript(()=>{
+              const noop=()=>Promise.resolve({});
+              window.Capacitor={platform:'ios',getPlatform:()=> 'ios',Plugins:{
+                App:{getLaunchUrl:async()=>null,addListener:noop,exitApp:noop},
+                StatusBar:{setStyle:noop,hide:noop,show:noop,setOverlaysWebView:noop},
+                Keyboard:{addListener:noop},
+                TextToSpeech:{speak:noop,stop:noop}
+              }};
+            });
+            await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:60000});
+            await page.waitForTimeout(6500);
+            const state=await page.evaluate(()=>({
+              theme:typeof app?.theme,
+              login:typeof app?.fun?.showLogin,
+              bestDomain:app?.net?.networkManagerXHR?.bestDomain?.(),
+              pinned:!!app?.net?.networkManagerXHR?.__stvComPinned,
+              // No credentials or cookie contents.
+              cookieCount:document.cookie.split(';').filter(x=>x.trim()).length
+            }));
+            console.log('READY',JSON.stringify(state));
+            if(state.theme!=='object'||state.login!=='function'||state.bestDomain!=='https://sangtacviet.com'||!state.pinned)throw new Error('App not initialized or domain pin failed');
+            await page.evaluate(()=>app.fun.showLogin());
+            await page.locator('#username:visible').last().fill('STV-NONEXISTENT-TEST-ACCOUNT');
+            await page.locator('#password:visible').last().fill('NOT-A-REAL-PASSWORD-DO-NOT-USE');
+            await page.locator('.loginbtn:visible').last().click();
+            await page.waitForTimeout(1200);
+            console.log('LOGIN_HTTP_SHAPE',JSON.stringify(loginRequest));
+            console.log('CROSS_DOMAIN_LOGIN',JSON.stringify(outOfDomain));
+            console.log('PAGE_ERRORS',JSON.stringify(errors.slice(0,6)));
+            if(!loginRequest||loginRequest.method!=='POST'||loginRequest.host!=='sangtacviet.com'||!loginRequest.hasUsername||!loginRequest.hasPassword)throw new Error('Login does not send expected same-site HTTP request');
+            if(outOfDomain.length)throw new Error('Login navigated to other origin');
+            await browser.close();
+          })().catch(e=>{console.error('TEST_FAILED',e.stack);process.exit(1)});
+          JS
