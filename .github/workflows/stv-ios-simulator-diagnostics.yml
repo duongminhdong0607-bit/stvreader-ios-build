@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json', 'repair/patch_app_delegate.py', 'repair/stv-ios-compat.js']
+    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json', 'repair/patch_app_delegate.py', 'repair/stv-ios-compat.js', 'repair/stv-ios-tts.js', 'repair/finalize_ios_133.py', 'repair/import_stv_133.py']
 permissions:
   contents: read
 jobs:
@@ -21,6 +21,9 @@ jobs:
           npm install --no-audit --no-fund
           npx cap add ios
           npx cap sync ios
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o /tmp/stv-1.3.3.apk https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk
+          python3 import_stv_133.py /tmp/stv-1.3.3.apk www
+          python3 finalize_ios_133.py
           python3 patch_app_delegate.py
           python3 - <<'PY'
           from pathlib import Path
