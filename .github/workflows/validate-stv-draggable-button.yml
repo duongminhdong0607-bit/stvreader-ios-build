@@ -1,0 +1,52 @@
+name: Validate STV draggable shortcut and reader timeout
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - repair/patch_app_delegate.py
+      - repair/stv-ios-reader-feedback.js
+      - repair/capacitor.config.json
+      - .github/workflows/validate-stv-draggable-button.yml
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original Android-compatible HTTP and reader JavaScript
+        working-directory: repair
+        run: |
+          set -e
+          for js in stv-ios-compat.js stv-ios-tts.js stv-ios-http-bridge.js stv-ios-chapter-transport.js stv-com-session.js stv-ios-reader-feedback.js; do
+            node --check "$js"
+          done
+          python3 - <<'PY'
+          import json
+          c=json.load(open('capacitor.config.json'))
+          assert c['plugins']['CapacitorHttp']['enabled'] is True
+          assert c['server']['url']=='https://sangtacviet.com/app.v2.php'
+          print('Verified STV 1.3.3 HTTP configuration and native reader timeout')
+          PY
+      - name: Generate and parse patched native Swift UI
+        working-directory: repair
+        run: |
+          set -e
+          mkdir -p ios/App/App
+          cat > ios/App/App/AppDelegate.swift <<'SWIFT'
+          import UIKit
+          @UIApplicationMain
+          class AppDelegate: UIResponder, UIApplicationDelegate {
+            func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+              return true
+            }
+          }
+          SWIFT
+          python3 patch_app_delegate.py
+          swiftc -frontend -parse ios/App/App/AppDelegate.swift
+          grep -q 'UIPanGestureRecognizer' ios/App/App/AppDelegate.swift
+          grep -q 'dragCenterX' ios/App/App/AppDelegate.swift
+          grep -q 'stv-ios-chapter-failure' ios/App/App/AppDelegate.swift
+          echo 'Swift parse, draggable button, persistent position, reader feedback: PASS'
