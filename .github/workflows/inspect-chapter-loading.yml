@@ -1,0 +1,30 @@
+name: Inspect official STV chapter loader error paths
+on:
+  workflow_dispatch:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-chapter-loading.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Read public reader script and identify infinite loading states
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          base='https://sangtacviet.com'
+          for suffix in ['/asset/app.v2.read.js','/asset/app.v2.chapterdisplay.js']:
+            response=requests.get(base+suffix,timeout=24)
+            text=response.text
+            print('SCRIPT',suffix,'STATUS',response.status_code,'SIZE',len(text))
+            for term in ['readchapter','grantcontext','code == 7','code === 7','code: 7','code == 1','code === 1','loading_content','Đang tải nội dung','reloadCurrentChapter','getChapter','fetchChapter','chapterLoad','Platform unknown']:
+              matches=list(re.finditer(re.escape(term),text,re.I))
+              if not matches:continue
+              print('TERM',term,'COUNT',len(matches))
+              for m in matches[:2]:
+                nearby=text[max(0,m.start()-550):min(len(text),m.end()+850)]
+                print('SAMPLE',nearby.replace('\n',' ')[:1500])
+          PY
