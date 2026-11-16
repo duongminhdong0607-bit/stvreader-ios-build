@@ -30,8 +30,8 @@ private final class STVActions: NSObject {
         if didOpenPublisherApp && !force { return }
         didOpenPublisherApp = true
         guard let url = URL(string: "https://sangtacviet.com/app.v2.php") else { return }
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 40)
-        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 40)
+        // Allow standard first-party cookies and browser caching to persist.
         web.load(request)
     }
     func prepare() {
@@ -127,6 +127,7 @@ private final class STVActions: NSObject {
 import json
 compat=Path("stv-ios-compat.js").read_text(encoding="utf-8")
 compat += "\n" + Path("stv-ios-tts.js").read_text(encoding="utf-8")
+compat += "\n" + Path("stv-com-session.js").read_text(encoding="utf-8")
 js_literal=json.dumps(compat, ensure_ascii=False)
 s=s.replace(
     "private var didOpenPublisherApp = false",
