@@ -1,0 +1,36 @@
+name: Verify STV runtime dependencies
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/check-runtime.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate all required STV scripts
+        run: |
+          set -e
+          python3 - <<'PY'
+          import requests
+          urls=[
+            'https://sangtacviet.com/app.v2.php',
+            'https://sangtacviet.com/asset/app.v2.js',
+            'https://sangtacviet.com/asset/app.v2.bookdisplay.js',
+            'https://sangtacviet.com/asset/app.v2.config.js',
+            'https://sangtacviet.com/jqr.js?v=10',
+            'https://sangtacviet.com/stv.ui.js?v=1.360',
+            'https://sangtacviet.com/asset/theme.default.css?v=0'
+          ]
+          for url in urls:
+            try:
+              r=requests.get(url, timeout=20)
+              print(r.status_code,len(r.content),r.url,r.headers.get('Content-Type',''))
+              if url.endswith('app.v2.config.js'):
+                for k in ['app.theme','getColorVar','theme']:
+                  print('CONFIG',k,r.text.count(k))
+            except Exception as e:
+              print(type(e).__name__,str(e))
+          PY
