@@ -1,9 +1,9 @@
-name: Build and verify STV MobileReader HTTP+Draggable IPA on simulator runner
+name: STV MobileReader iOS chapter loading timeout fix
 on:
   workflow_dispatch:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json', 'repair/patch_app_delegate.py', 'repair/stv-ios-compat.js', 'repair/stv-ios-tts.js', 'repair/finalize_ios_133.py', 'repair/import_stv_133.py']
+    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json', 'repair/patch_app_delegate.py', 'repair/stv-ios-compat.js', 'repair/stv-ios-tts.js', 'repair/finalize_ios_133.py', 'repair/import_stv_133.py', 'repair/stv-ios-reader-feedback.js', 'repair/stv-ios-http-bridge.js']
 permissions:
   contents: read
 jobs:
@@ -100,13 +100,13 @@ jobs:
           xcrun lipo -archs "$APP/App" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/App.app
-          zip -qry STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa Payload
-          unzip -t STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa > /dev/null
-          ls -lh STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa
+          zip -qry STVMobileReader-133-ReaderTimeout-Fixed-unsigned.ipa Payload
+          unzip -t STVMobileReader-133-ReaderTimeout-Fixed-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-133-ReaderTimeout-Fixed-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVMobileReader-133-HTTP-Drag-STV-unsigned-IPA
-          path: repair/STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa
+          name: STVMobileReader-133-ReaderTimeout-Fixed-unsigned-IPA
+          path: repair/STVMobileReader-133-ReaderTimeout-Fixed-unsigned.ipa
           retention-days: 7
       - name: Launch app and capture diagnostics
         shell: bash
