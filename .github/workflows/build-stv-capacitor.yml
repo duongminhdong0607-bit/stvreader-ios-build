@@ -1,4 +1,4 @@
-name: Build STV MobileReader Search and Sync IPA
+name: Build STV MobileReader Search Sync fixed UI
 on:
   push:
     branches: [stv-capacitor-rebuild]
@@ -24,6 +24,18 @@ jobs:
           curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o original-truncated.ipa https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa
           python3 extract_assets.py original-truncated.ipa www
           rm -f original-truncated.ipa
+          # The damaged IPA contains an outdated index.html which requests
+          # /asset/app.v2.main.js (HTTP 404). Never launch that obsolete page.
+          cat > www/index.html <<'HTML'
+          <!doctype html>
+          <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="font:16px -apple-system,BlinkMacSystemFont,sans-serif;background:#f8f8f8;padding:30px;text-align:center">
+          <h2>STV MobileReader</h2><p>Đang mở giao diện Sáng Tác Việt phiên bản hiện tại…</p>
+          <p>Cần kết nối Internet để tìm kiếm và đồng bộ truyện.</p>
+          <a href="https://sangtacviet.com/app.v2.php">Mở Sáng Tác Việt</a>
+          </body></html>
+          HTML
+          if grep -q 'app.v2.main.js' www/index.html; then exit 51; fi
       - name: Check official app server
         shell: bash
         run: |
@@ -51,11 +63,11 @@ jobs:
           xcrun lipo -archs "$APP/App" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/App.app
-          zip -qry STVMobileReader-Search-Sync-unsigned.ipa Payload
-          unzip -t STVMobileReader-Search-Sync-unsigned.ipa > /dev/null
-          ls -lh STVMobileReader-Search-Sync-unsigned.ipa
+          zip -qry STVMobileReader-Search-Sync-Fixed-unsigned.ipa Payload
+          unzip -t STVMobileReader-Search-Sync-Fixed-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-Search-Sync-Fixed-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVMobileReader-Search-Sync-IPA
-          path: repair/STVMobileReader-Search-Sync-unsigned.ipa
+          name: STVMobileReader-Search-Sync-Fixed-IPA
+          path: repair/STVMobileReader-Search-Sync-Fixed-unsigned.ipa
           retention-days: 7
