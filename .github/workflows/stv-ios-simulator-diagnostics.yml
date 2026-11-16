@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json']
+    paths: [.github/workflows/stv-ios-simulator-diagnostics.yml, 'repair/package.json', 'repair/capacitor.config.json', 'repair/patch_app_delegate.py', 'repair/stv-ios-compat.js']
 permissions:
   contents: read
 jobs:
@@ -56,7 +56,7 @@ jobs:
                           for child in view.subviews {if let w=search(child){return w}}
                           return nil
                       }
-                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,dbLoaded:typeof onDbLoad === 'object' ? onDbLoad.isLoaded : 'absent',historyLoaded:window.app?.history?.loaded,sqlitePlugin:typeof window.Capacitor?.Plugins?.CapacitorSQLite,errors:window.__STV_ERROR_LOG||[],html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
+                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,dbLoaded:typeof onDbLoad === 'object' ? onDbLoad.isLoaded : 'absent',historyLoaded:window.app?.history?.loaded,sqlitePlugin:typeof window.Capacitor?.Plugins?.CapacitorSQLite,compat:window.ui?.style?.create?.__stvIOSCompat===true,errors:window.__STV_ERROR_LOG||[],html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
                       guard let web=search(window?.rootViewController?.view) else {
                           saveSTVSimResult("time=\\(delay) no_webview")
                           return
@@ -128,6 +128,7 @@ jobs:
           assert final.get('search') == 'function', 'STV search missing'
           assert final.get('sync') == 'function', 'STV history synchronization missing'
           assert final.get('dbLoaded') is True, 'Database readiness event not fired'
+          assert final.get('compat') is True, 'Native compatibility injection was not applied'
           assert 'history\nfollow\nbookmark' not in final.get('html',''), 'STV text has not translated'
           print('PASS: iOS Simulator STV fully initialized')
           PY
