@@ -2,7 +2,7 @@ name: Browser smoke test of official STV app UI
 on:
   push:
     branches: [stv-capacitor-rebuild]
-    paths: [.github/workflows/stv-ui-smoke.yml]
+    paths: [.github/workflows/stv-ui-smoke.yml, 'repair/stv-ios-compat.js']
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
+      - uses: actions/checkout@v4
       - name: Setup Playwright browser
         run: |
           npm install --no-save playwright@1.58.2
@@ -57,6 +58,7 @@ jobs:
             const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
             const errors=[];
             page.on('pageerror',e=>errors.push({message:e.message,stack:e.stack?.slice(0,550)}));
+            await page.addInitScript({content:require('fs').readFileSync('repair/stv-ios-compat.js','utf8')});
             await page.addInitScript(()=>{
               const noop=()=>Promise.resolve({});
               const App={getLaunchUrl:async()=>null,addListener:noop,exitApp:noop};
@@ -67,13 +69,15 @@ jobs:
             try{
               await page.goto('https://sangtacviet.com/app.v2.php',{waitUntil:'domcontentloaded',timeout:40000});
               await page.waitForTimeout(8000);
-              console.log('MOCK_IOS_STATE',JSON.stringify(await page.evaluate(()=>({
+              const state=await page.evaluate(()=>({
                 theme:typeof window.app?.theme,search:typeof window.app?.fun?.showSearch,
                 history:window.app?.history?.loaded,
                 dbLoaded:typeof onDbLoad==='object'?onDbLoad.isLoaded:null,
                 platform:window.app?.platform?.isIOS,
                 text:document.body?.innerText?.slice(0,180)
-              }))));
+              }));
+              console.log('MOCK_IOS_STATE',JSON.stringify(state));
+              if(state.theme !== 'object') throw new Error('Theme missing despite compatibility shim');
               console.log('MOCK_IOS_ERRORS',JSON.stringify(errors.slice(0,20)));
             }catch(e){console.log('MOCK_TEST_ERROR',e.message)}
             await browser.close();
