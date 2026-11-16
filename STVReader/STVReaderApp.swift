@@ -794,6 +794,15 @@ enum STVPublicAPI {
             URLQueryItem(name: "p", value: "0")
         ])
         let data = try await fetch(url: url)
+        // STV responds with JSON in its app, but a direct native HTTP client
+        // often receives HTML result cards from the very same public endpoint.
+        // Parse the returned data into native SwiftUI models; never render HTML.
+        let bytes = String(data: data, encoding: .utf8) ?? ""
+        if !bytes.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+            let parsed = parseSearchHTML(bytes)
+            guard !parsed.isEmpty else { throw STVOnlineError.invalidResponse }
+            return parsed
+        }
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let rows = root["list"] as? [[String: Any]] else {
             throw STVOnlineError.invalidResponse
@@ -809,6 +818,48 @@ enum STVPublicAPI {
                 summary: field(item["info"]),
                 chapterCount: Int(field(item["chaptercount"])) ?? 0
             )
+        }
+    }
+
+    private static func capture(_ pattern: String, in source: String, group: Int = 1) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return nil }
+        let text = source as NSString
+        guard let match = regex.firstMatch(in: source, range: NSRange(location: 0, length: text.length)),
+              match.numberOfRanges > group,
+              match.range(at: group).location != NSNotFound else { return nil }
+        return text.substring(with: match.range(at: group))
+    }
+
+    private static func cleanHTML(_ html: String) -> String {
+        let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        return stripped
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func parseSearchHTML(_ html: String) -> [STVOnlineBook] {
+        let pattern = #"<a\b(?=[^>]*\bbooksearch\b)[^>]*href="/truyen/([^/]+)/[^/]+/([^/]+)/"[^>]*>(.*?)</a>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else {
+            return []
+        }
+        let text = html as NSString
+        return regex.matches(in: html, range: NSRange(location: 0, length: text.length)).compactMap { match in
+            guard match.numberOfRanges >= 4 else { return nil }
+            let host = text.substring(with: match.range(at: 1))
+            let sourceID = text.substring(with: match.range(at: 2))
+            let innerHTML = text.substring(with: match.range(at: 3))
+            guard let title = capture(#"<b[^>]*class="searchbooktitle"[^>]*>(.*?)</b>"#, in: innerHTML),
+                  !title.isEmpty else { return nil }
+            let author = capture(#"<span[^>]*class="searchbookauthor"[^>]*>(.*?)</span>"#, in: innerHTML) ?? ""
+            let summary = capture(#"<span[^>]*class="lhr"[^>]*>(.*?)</span>"#, in: innerHTML) ?? ""
+            return STVOnlineBook(host: host, sourceID: sourceID,
+                                 title: cleanHTML(title), author: cleanHTML(author),
+                                 summary: cleanHTML(summary), chapterCount: 0)
         }
     }
 
