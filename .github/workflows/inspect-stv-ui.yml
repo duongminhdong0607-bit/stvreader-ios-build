@@ -1,0 +1,35 @@
+name: Inspect official STV application UI
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-ui.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect public login search and sync entrypoints (no credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import requests,re
+          root="https://sangtacviet.com"
+          paths=["/app.v2.php","/asset/app.v2.js","/stv.ui.js"]
+          for path in paths:
+              try:
+                  r=requests.get(root+path,timeout=18,headers={"User-Agent":"Mozilla/5.0"})
+              except Exception as e:
+                  print(path,"ERROR",repr(e));continue
+              print("\nSOURCE",path,"status",r.status_code,"bytes",len(r.content))
+              s=r.text
+              scripts=re.findall(r'<script[^>]*src=["\x27]([^"\x27]+)',s,re.I)
+              print("SCRIPT LINKS",scripts[:20])
+              for phrase in ['showSearch','opensearch','showLogin','searchbook','login','getsearch','saveHistory','syncHistory','setUser','localStorage','loginpage','history','bookfollowing','function search','/api/']:
+                  p=re.search(re.escape(phrase),s,re.I)
+                  if p:
+                      snippet=s[max(0,p.start()-130):min(len(s),p.start()+180)].replace('\n',' ')
+                      print('TERM',phrase,'COUNT',len(re.findall(re.escape(phrase),s,re.I)),'SAMPLE',snippet[:280])
+          PY
