@@ -1,0 +1,82 @@
+name: Test STV reader infinite loading fix
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - repair/stv-ios-reader-feedback.js
+      - .github/workflows/test-stv-reader-timeout.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup browser
+        run: |
+          npm install --no-save playwright@1.58.2
+          npx playwright install chromium --with-deps
+      - name: Unit test actual STV reader states (no login or chapter content collected)
+        run: |
+          node --check repair/stv-ios-reader-feedback.js
+          node - <<'JS'
+          const {chromium}=require('playwright');
+          const fs=require('fs');
+          (async()=>{
+            const browser=await chromium.launch({headless:true});
+            const js=fs.readFileSync('repair/stv-ios-reader-feedback.js','utf8');
+
+            // STV's actual reader has topPage().className==="".
+            const page=await browser.newPage();
+            await page.clock.install();
+            await page.setContent('<!doctype html><body><section id="reader"><p>Đang tải nội dung...</p></section></body>');
+            await page.evaluate(()=>{
+              window.__retryCount=0;
+              window.app={
+                topPage(){return document.getElementById('reader');},
+                reader:{reloadCurrentChapter(){window.__retryCount++;}}
+              };
+              window.Capacitor={Plugins:{
+                Http:{async get(){return {status:200,data:'{"code":7,"info":"Device not supported"}'};}}
+              }};
+            });
+            await page.addScriptTag({content:js});
+            await page.clock.fastForward(1500);
+            const initial=await page.locator('#stv-ios-chapter-failure').count();
+            if(initial)throw new Error('Showed error before STV network request');
+
+            await page.evaluate(()=>Capacitor.Plugins.Http.get({url:'https://sangtacviet.com/?sajax=readchapter'}));
+            await page.clock.fastForward(3500);
+            const dialog=page.locator('#stv-ios-chapter-failure');
+            if(!(await dialog.isVisible()))throw new Error('STV code 7 did not surface a visible error');
+            const msg=await dialog.innerText();
+            if(!msg.includes('mã 7') || !msg.includes('Thử tải lại'))throw new Error('Wrong server-denial explanation');
+            await dialog.getByRole('button',{name:'Thử tải lại'}).click();
+            const retry=await page.evaluate(()=>window.__retryCount);
+            if(retry!==1)throw new Error('Retry button did not invoke reader reload');
+            console.log('TEST_CODE7_RETRY: PASS');
+
+            const timeoutPage=await browser.newPage();
+            await timeoutPage.clock.install();
+            await timeoutPage.setContent('<!doctype html><body><div id="reader"><p>Đang tải nội dung...</p></div></body>');
+            await timeoutPage.evaluate(()=>window.app={topPage(){return document.getElementById('reader');}});
+            await timeoutPage.addScriptTag({content:js});
+            await timeoutPage.clock.fastForward(22500);
+            if(!(await timeoutPage.locator('#stv-ios-chapter-failure').isVisible()))throw new Error('Endless spinner not stopped after timeout');
+            console.log('TEST_20_SECONDS_TIMEOUT: PASS');
+
+            const successPage=await browser.newPage();
+            await successPage.clock.install();
+            const content='Nội dung chương được tải thành công. '.repeat(30);
+            await successPage.setContent('<!doctype html><body><div id="reader"><div class="chapterscroller"></div></div></body>');
+            await successPage.locator('.chapterscroller').evaluate((el,txt)=>el.innerText=txt,content);
+            await successPage.evaluate(()=>window.app={topPage(){return document.getElementById('reader');}});
+            await successPage.addScriptTag({content:js});
+            await successPage.clock.fastForward(23000);
+            if(await successPage.locator('#stv-ios-chapter-failure').count())throw new Error('Valid chapter incorrectly reported as failed');
+            console.log('TEST_VALID_CHAPTER_UNCHANGED: PASS');
+            await browser.close();
+          })().catch(e=>{console.error('REGRESSION_FAIL:',e.stack);process.exit(1)});
+          JS
