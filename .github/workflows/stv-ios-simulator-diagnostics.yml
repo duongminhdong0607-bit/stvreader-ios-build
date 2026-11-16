@@ -27,6 +27,23 @@ jobs:
           p=Path("ios/App/App/AppDelegate.swift")
           s=p.read_text()
           s=s.replace('STVActions.shared.prepare()', 'STVActions.shared.prepare()\n        stvSimulatorDiagnostics()', 1)
+
+          # Collect real iOS WebKit exceptions from the beginning of navigation.
+          s=s.replace('web.load(request)', '''
+        let errorHook = #"""
+          (() => {
+            window.__STV_ERROR_LOG = [];
+            window.addEventListener("error", e => {
+              window.__STV_ERROR_LOG.push({type:"error",message:String(e.message),file:String(e.filename),line:e.lineno,stack:String(e.error?.stack || "")});
+            }, true);
+            window.addEventListener("unhandledrejection", e => {
+              window.__STV_ERROR_LOG.push({type:"promise",message:String(e.reason),stack:String(e.reason?.stack || "")});
+            }, true);
+          })()
+          """#
+        web.configuration.userContentController.addUserScript(WKUserScript(source:errorHook, injectionTime:.atDocumentStart, forMainFrameOnly:true))
+        web.load(request)
+          ''',1)
           s += """
           private func stvSimulatorDiagnostics() {
               let delays: [Double] = [3, 9, 16, 25]
@@ -39,7 +56,7 @@ jobs:
                           for child in view.subviews {if let w=search(child){return w}}
                           return nil
                       }
-                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,dbLoaded:typeof onDbLoad === 'object' ? onDbLoad.isLoaded : 'absent',historyLoaded:window.app?.history?.loaded,sqlitePlugin:typeof window.Capacitor?.Plugins?.CapacitorSQLite,html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
+                      let js = #"(()=>{try{return JSON.stringify({url:location.href,origin:location.origin,app:typeof window.app,theme:typeof window.app?.theme,color:typeof window.app?.theme?.getColorVar,search:typeof window.app?.fun?.showSearch,sync:typeof window.app?.history?.showSynchronizer,init:typeof window.app?.init,state:document.readyState,dbLoaded:typeof onDbLoad === 'object' ? onDbLoad.isLoaded : 'absent',historyLoaded:window.app?.history?.loaded,sqlitePlugin:typeof window.Capacitor?.Plugins?.CapacitorSQLite,errors:window.__STV_ERROR_LOG||[],html:document.body?.innerText?.slice(0,220),links:[...document.scripts].slice(-12).map(x=>x.src),nav:performance.getEntriesByType('resource').filter(x=>x.name.includes('app.v2')).map(x=>x.name)})}catch(e){return 'JS_ERROR: '+e.message}})()"#
                       guard let web=search(window?.rootViewController?.view) else {
                           saveSTVSimResult("time=\\(delay) no_webview")
                           return
@@ -105,6 +122,7 @@ jobs:
           print('INIT_STATES',[(x.get('url'),x.get('theme'),x.get('dbLoaded'),x.get('search')) for x in entries])
           assert entries, 'No WebView diagnostic state could be parsed'
           final=entries[-1]
+          print('WEBKIT_ERRORS',final.get('errors'))
           assert final.get('theme') == 'object', 'app.theme missing at 25 seconds'
           assert final.get('color') == 'function', 'app.theme.getColorVar missing'
           assert final.get('search') == 'function', 'STV search missing'
