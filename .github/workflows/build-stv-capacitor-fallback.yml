@@ -1,0 +1,90 @@
+name: Build STV MobileReader COM login fix macos14 fallback
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths:
+      - '.github/workflows/build-stv-capacitor-fallback.yml'
+  workflow_dispatch:
+concurrency:
+  group: stv-mobile-1-3-3-com-login-fix-fallback
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 55
+    defaults:
+      run:
+        working-directory: repair
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore intact original app interface assets from publisher CDN
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o original-truncated.ipa https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.2.ipa
+          python3 - <<'PY'
+          import hashlib
+          p="original-truncated.ipa"
+          d=hashlib.sha256(open(p,"rb").read()).hexdigest()
+          assert d=="d7564dedfdba305c68e64470354b1f6856e81ea3d5b995ada90ca60ee05ea270", ("Unexpected IPA 1.3.2 source",d)
+          print("Original iOS IPA matches uploaded file; repairing recoverable resources only")
+          PY
+          python3 extract_assets.py original-truncated.ipa www
+          rm -f original-truncated.ipa
+          # Use EXACT STV 1.3.3 Android source to recover portable resources.
+          curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o stvmobilereader-1.3.3.apk https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk
+          python3 import_stv_133.py stvmobilereader-1.3.3.apk www
+          rm -f stvmobilereader-1.3.3.apk
+          # The damaged IPA contains an outdated index.html which requests
+          # /asset/app.v2.main.js (HTTP 404). Never launch that obsolete page.
+          cat > www/index.html <<'HTML'
+          <!doctype html>
+          <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+          <body style="font:16px -apple-system,BlinkMacSystemFont,sans-serif;background:#f8f8f8;padding:30px;text-align:center">
+          <h2>STV MobileReader</h2><p>Đang mở giao diện Sáng Tác Việt phiên bản hiện tại…</p>
+          <p>Cần kết nối Internet để tìm kiếm và đồng bộ truyện.</p>
+          <a href="https://sangtacviet.com/app.v2.php">Mở Sáng Tác Việt</a>
+          </body></html>
+          HTML
+          if grep -q 'app.v2.main.js' www/index.html; then exit 51; fi
+      - name: Check official app server
+        shell: bash
+        run: |
+          curl -sSLI --max-time 20 https://sangtacviet.com/app.v2.php | head -15 || true
+      - name: Install native Capacitor and iOS plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          npm install --no-audit --no-fund
+          npx cap add ios
+          npx cap sync ios
+          python3 patch_app_delegate.py
+          python3 finalize_ios_133.py
+          grep -q 'STVActions.shared.prepare()' ios/App/App/AppDelegate.swift
+          grep -q 'CFBundleDisplayName' ios/App/App/Info.plist
+          test -s ios/App/App/Assets.xcassets/AppIcon.appiconset/Contents.json
+          grep -q 'STVActions.shared.prepare()' ios/App/App/AppDelegate.swift
+          echo "Native dependency verification:"
+          find ios -name '*.framework' -o -name '*.xcframework' | head -40
+      - name: Build ARM64 IPA (unsigned, for Sideloadly)
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stv-capacitor" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          APP="$RUNNER_TEMP/stv-capacitor/Build/Products/Release-iphoneos/App.app"
+          test -s "$APP/App"
+          test -f "$APP/Info.plist"
+          xcrun lipo -archs "$APP/App" | grep -w arm64
+          mkdir -p Payload
+          ditto "$APP" Payload/App.app
+          zip -qry STVMobileReader-COM-Login-Reader-macos14-unsigned.ipa Payload
+          unzip -t STVMobileReader-COM-Login-Reader-macos14-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-COM-Login-Reader-macos14-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STVMobileReader-COM-Login-Reader-macos14-IPA
+          path: repair/STVMobileReader-COM-Login-Reader-macos14-unsigned.ipa
+          retention-days: 7
