@@ -1,4 +1,4 @@
-name: STV MobileReader iOS chapter loading timeout fix
+name: STV MobileReader complete 1.3.3 timeout fix IPA
 on:
   workflow_dispatch:
   push:
@@ -23,6 +23,9 @@ jobs:
           npx cap sync ios
           curl -fL --retry 3 --connect-timeout 15 --max-time 180 -o /tmp/stv-1.3.3.apk https://staticvn.sangtacvietcdn.xyz/download/stvmobilereader-1.3.3.apk
           python3 import_stv_133.py /tmp/stv-1.3.3.apk www
+          # Sync again AFTER copying verified 1.3.3 resources, so the IPA
+          # includes the complete interface assets without manual ZIP surgery.
+          npx cap sync ios
           python3 finalize_ios_133.py
           python3 patch_app_delegate.py
           python3 - <<'PY'
