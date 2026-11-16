@@ -1,0 +1,27 @@
+name: Inspect named STV sync entrypoints
+on:
+  push:
+    branches: [stv-capacitor-rebuild]
+    paths: [.github/workflows/inspect-stv-methods.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract public function names and history sync UI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import requests,re
+          files=['/app.v2.php','/asset/app.v2.js']
+          for p in files:
+              t=requests.get('https://sangtacviet.com'+p,timeout=25).text
+              print('\nFILE',p)
+              for pat in [r'(\b\w+)\s*:\s*function\([^)]*\)\s*\{[^\n]*synchronize',r'app\.history\.[A-Za-z_]*[Ss]ync[A-Za-z_]*',r'app\.fun\.showSearch\s*=',r'showSearch\s*:',r'showLogin\s*:',r'synchronizeHistory',r'listsavedhistory',r'page\-pagesearch',r'showSynchronizedHistory',r'\bsynchronize\b']:
+                  m=list(re.finditer(pat,t,re.I))
+                  print('REGEX',pat,'MATCHES',len(m))
+                  for x in m[:3]:
+                      print(t[max(0,x.start()-220):min(len(t),x.end()+250)].replace('\n',' ')[:480])
+          PY
