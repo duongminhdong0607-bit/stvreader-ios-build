@@ -1,6 +1,6 @@
 {
   "appId": "com.stvreader.capacitor.rebuild",
-  "appName": "STV MobileReader - Search Sync",
+  "appName": "STV MobileReader - Fixed",
   "webDir": "www",
   "plugins": {
     "SplashScreen": {
@@ -8,9 +8,6 @@
     },
     "CapacitorHttp": {
       "enabled": false
-    },
-    "CapacitorSQLite": {
-      "iosIsEncryption": false
     }
   },
   "server": {
