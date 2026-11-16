@@ -25,8 +25,15 @@
 
     async function request(options) {
       const target = new URL(options?.url || '', window.location.href);
-      if (target.protocol !== 'https:' || target.hostname !== SERVER) {
-        throw new Error('Native HTTP only supports sangtacviet.com');
+      if (target.protocol !== 'https:') throw new Error('Only HTTPS is supported');
+      if (target.hostname !== SERVER) {
+        // STV probes alternative mirrors using GET /warp.php. The user chose
+        // sangtacviet.com; tell its domain-selector those mirrors are
+        // disabled without sending cookies or auth data to another site.
+        if (target.pathname === '/warp.php' && (options.method || 'GET').toUpperCase() === 'GET') {
+          return {status: 503, data: '', headers: {}};
+        }
+        throw new Error('Only sangtacviet.com is permitted for STV native requests');
       }
       const method = (options.method || 'GET').toUpperCase();
       const args = {
