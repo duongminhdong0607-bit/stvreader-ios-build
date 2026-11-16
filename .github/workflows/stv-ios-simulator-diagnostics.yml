@@ -1,4 +1,4 @@
-name: Diagnose actual STV app on iOS simulator
+name: Build and verify STV MobileReader HTTP+Draggable IPA on simulator runner
 on:
   workflow_dispatch:
   push:
@@ -89,6 +89,25 @@ jobs:
           set -euo pipefail
           xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/stvsim" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$RUNNER_TEMP/sim-build.log" 2>&1 || { tail -150 "$RUNNER_TEMP/sim-build.log"; exit 1; }
           test -s "$RUNNER_TEMP/stvsim/Build/Products/Debug-iphonesimulator/App.app/App"
+      - name: Build distributable unsigned iPhone ARM64 IPA
+        working-directory: repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/stvdevice" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$RUNNER_TEMP/iphone-build.log" 2>&1 || { tail -180 "$RUNNER_TEMP/iphone-build.log"; exit 1; }
+          APP="$RUNNER_TEMP/stvdevice/Build/Products/Release-iphoneos/App.app"
+          test -s "$APP/App"
+          xcrun lipo -archs "$APP/App" | grep -w arm64
+          mkdir -p Payload
+          ditto "$APP" Payload/App.app
+          zip -qry STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa Payload
+          unzip -t STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa > /dev/null
+          ls -lh STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STVMobileReader-133-HTTP-Drag-STV-unsigned-IPA
+          path: repair/STVMobileReader-133-HTTP-Drag-STV-unsigned.ipa
+          retention-days: 7
       - name: Launch app and capture diagnostics
         shell: bash
         run: |
