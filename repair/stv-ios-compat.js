@@ -7,6 +7,43 @@
   if (!window.nativeclick || typeof window.nativeclick.trigger !== "function") {
     window.nativeclick = { trigger() { return undefined; } };
   }
+  // Original Android app downloads cover art via Capacitor.Plugins.Http.
+  // The iOS rebuild has no such plugin; use a regular image request instead.
+  // This affects cover artwork only; it does not touch account/network APIs.
+  function installImageFallback() {
+    const images = window.app && window.app.images;
+    if (!images || typeof images.downloadAndAssign !== "function") return false;
+    if (images.downloadAndAssign.__stvIOSCompat) return true;
+    const original = images.downloadAndAssign;
+    function compatibleDownloadAndAssign(url, image, headers = {}) {
+      if (window.Capacitor?.Plugins?.Http?.get) {
+        return original.call(this, url, image, headers);
+      }
+      if (!image || !url) return Promise.resolve();
+      return new Promise(resolve => {
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          resolve();
+        };
+        image.addEventListener("load", finish, {once:true});
+        image.addEventListener("error", finish, {once:true});
+        image.src = url;
+        setTimeout(finish, 5000);
+      });
+    }
+    compatibleDownloadAndAssign.__stvIOSCompat = true;
+    images.downloadAndAssign = compatibleDownloadAndAssign;
+    return true;
+  }
+  if (!installImageFallback()) {
+    const imagePoll = setInterval(() => {
+      if (installImageFallback()) clearInterval(imagePoll);
+    }, 20);
+    setTimeout(() => clearInterval(imagePoll), 30000);
+  }
+
   function install() {
     const style = window.ui && window.ui.style;
     if (!style || typeof style.create !== "function") return false;
