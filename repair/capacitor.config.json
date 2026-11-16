@@ -7,7 +7,7 @@
       "launchShowDuration": 0
     },
     "CapacitorHttp": {
-      "enabled": false
+      "enabled": true
     }
   },
   "server": {
