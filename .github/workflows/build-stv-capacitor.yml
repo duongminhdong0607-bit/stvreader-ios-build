@@ -1,4 +1,4 @@
-name: Build original-style Capacitor iOS app
+name: Build STV MobileReader Search and Sync IPA
 on:
   push:
     branches: [stv-capacitor-rebuild]
@@ -36,6 +36,8 @@ jobs:
           npm install --no-audit --no-fund
           npx cap add ios
           npx cap sync ios
+          python3 patch_app_delegate.py
+          grep -q 'STVActions.shared.prepare()' ios/App/App/AppDelegate.swift
           echo "Native dependency verification:"
           find ios -name '*.framework' -o -name '*.xcframework' | head -40
       - name: Build ARM64 IPA (unsigned, for Sideloadly)
@@ -49,11 +51,11 @@ jobs:
           xcrun lipo -archs "$APP/App" | grep -w arm64
           mkdir -p Payload
           ditto "$APP" Payload/App.app
-          zip -qry STVMobileReader-Capacitor-rebuild-unsigned.ipa Payload
+          zip -qry STVMobileReader-Search-Sync-unsigned.ipa Payload
           unzip -t STVMobileReader-Capacitor-rebuild-unsigned.ipa > /dev/null
           ls -lh STVMobileReader-Capacitor-rebuild-unsigned.ipa
       - uses: actions/upload-artifact@v4
         with:
-          name: STVMobileReader-Capacitor-rebuild-unsigned-IPA
+          name: STVMobileReader-Search-Sync-IPA
           path: repair/STVMobileReader-Capacitor-rebuild-unsigned.ipa
           retention-days: 7
