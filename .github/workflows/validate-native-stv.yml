@@ -23,7 +23,7 @@ jobs:
       - name: Check HTTPS public catalog and chapter list
         run: |
           python3 - <<'PY'
-          import json,urllib.parse,urllib.request
+          import json,urllib.parse,urllib.request,re,html
           base='https://sangtacviet.com'
           def get(path,items):
             url=base+path+'?'+urllib.parse.urlencode(items)
@@ -37,15 +37,21 @@ jobs:
               assert r.status==200
               raw=r.read()
               print('HTTP_RESPONSE',r.status,r.headers.get('Content-Type'),len(raw))
-              try: return json.loads(raw)
-              except json.JSONDecodeError:
-                print('HTTP_NON_JSON_SAMPLE',raw[:300].decode('utf-8','replace'))
-                raise
+              if raw.lstrip().startswith(b'{'): return json.loads(raw)
+              return raw.decode('utf-8','replace')
           try:
             results=get('/io/searchtp/searchBooks',{'method':'search','minc':'0','category':'','findinname':'Hồng Hoang','find':'','sort':'','host':'','tag':'','step':'','p':'0'})
-            print('SEARCH_RESULTS',len(results.get('list',[])),'code',results.get('code'))
-            assert isinstance(results.get('list'),list) and len(results['list'])>0
+            if isinstance(results,dict):
+              count=len(results.get('list',[]))
+              print('SEARCH_JSON_RESULTS',count)
+            else:
+              cards=re.findall(r'<a\\b(?=[^>]*\\bbooksearch\\b)[^>]*href="/truyen/([^/]+)/[^/]+/([^/]+)/"[^>]*>(.*?)</a>',results,re.I|re.S)
+              titles=[html.unescape(re.sub(r'<[^>]+>','',re.search(r'<b[^>]*class="searchbooktitle"[^>]*>(.*?)</b>',card[2],re.S).group(1)).strip()) for card in cards if re.search(r'<b[^>]*class="searchbooktitle"[^>]*>(.*?)</b>',card[2],re.S)]
+              count=len(titles)
+              print('SEARCH_HTML_RESULTS',count,'TITLE_EXAMPLES',titles[:3])
+            assert count>0
             chapters=get('/index.php',{'ngmar':'chapterlist','h':'uukanshu','bookid':'169690','sajax':'getchapterlist'})
+            if isinstance(chapters,str): chapters=json.loads(chapters)
             raw=chapters.get('data','')
             parsed=[p.split('-/-',2) for p in raw.split('-//-') if '-/-' in p]
             print('CHAPTERS',len(parsed),'first',parsed[0][2][:100] if parsed else '')
