@@ -41,6 +41,44 @@
     wrapped = true;
   }
 
+  // STV reader.getContent2() calls Capacitor.Plugins.Http.get() directly,
+  // bypassing app.net.getCapacitor; monitor that original path too.
+  function observeOriginalHttpPlugin() {
+    const plugin = window.Capacitor?.Plugins?.Http;
+    if (!plugin || typeof plugin.get !== "function") return;
+    if (plugin.get.__stvReaderDirectMonitor) return;
+    const oldGet = plugin.get;
+    async function observedGet(options) {
+      const url = new URL(options?.url || "", window.location.href);
+      const isChapter = url.hostname === "sangtacviet.com"
+          && url.searchParams.get("sajax") === "readchapter";
+      try {
+        const response = await oldGet.call(this, options);
+        if (isChapter) {
+          let payload = response?.data;
+          if (typeof payload === "string") {
+            try {
+              const start = payload.indexOf("{");
+              payload = start < 0 ? {} : JSON.parse(payload.slice(start));
+            } catch (_error) { payload = {}; }
+          }
+          const code = String(payload?.code ?? "");
+          lastFailure = code === "7" ? "7" : "";
+          lastErrorText = typeof payload?.info === "string" ? payload.info.slice(0, 140) : "";
+        }
+        return response; // Do not alter first-party STV server content.
+      } catch (error) {
+        if (isChapter) {
+          lastFailure = "network";
+          lastErrorText = "";
+        }
+        throw error;
+      }
+    }
+    observedGet.__stvReaderDirectMonitor = true;
+    plugin.get = observedGet;
+  }
+
   function currentReaderPage() {
     const page = window.app?.topPage?.();
     if (!page) return null;
@@ -78,7 +116,7 @@
     title.style.fontWeight = "700";
     title.style.fontSize = "17px";
     const detail = document.createElement("p");
-    const reason = lastFailure === "7" ? "Máy chủ STV không cung cấp nội dung cho yêu cầu này (mã 7)." :
+    const reason = lastFailure === "7" ? "Máy chủ STV từ chối thiết bị/ứng dụng này khi tải chương (mã 7)." :
       lastFailure === "network" ? "Kết nối tới máy chủ STV không thành công." :
       "Yêu cầu tải chương chưa hoàn tất.";
     detail.textContent = reason + " Bạn có thể đăng nhập trên STV, kiểm tra nguồn/chương hoặc thử tải lại.";
@@ -108,6 +146,7 @@
 
   setInterval(() => {
     wrapTransport();
+    observeOriginalHttpPlugin();
     const page = currentReaderPage();
     if (!page) {
       activePage = null;
