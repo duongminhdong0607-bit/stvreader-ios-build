@@ -30,19 +30,19 @@ jobs:
 
           # Collect real iOS WebKit exceptions from the beginning of navigation.
           s=s.replace('web.load(request)', '''
-        let errorHook = #"""
-          (() => {
-            window.__STV_ERROR_LOG = [];
-            window.addEventListener("error", e => {
-              window.__STV_ERROR_LOG.push({type:"error",message:String(e.message),file:String(e.filename),line:e.lineno,stack:String(e.error?.stack || "")});
-            }, true);
-            window.addEventListener("unhandledrejection", e => {
-              window.__STV_ERROR_LOG.push({type:"promise",message:String(e.reason),stack:String(e.reason?.stack || "")});
-            }, true);
-          })()
-          """#
-        web.configuration.userContentController.addUserScript(WKUserScript(source:errorHook, injectionTime:.atDocumentStart, forMainFrameOnly:true))
-        web.load(request)
+                  let errorHook = #"""
+                    (() => {
+                      window.__STV_ERROR_LOG = [];
+                      window.addEventListener("error", e => {
+                        window.__STV_ERROR_LOG.push({type:"error",message:String(e.message),file:String(e.filename),line:e.lineno,stack:String(e.error?.stack || "")});
+                      }, true);
+                      window.addEventListener("unhandledrejection", e => {
+                        window.__STV_ERROR_LOG.push({type:"promise",message:String(e.reason),stack:String(e.reason?.stack || "")});
+                      }, true);
+                    })()
+                    """#
+                  web.configuration.userContentController.addUserScript(WKUserScript(source:errorHook, injectionTime:.atDocumentStart, forMainFrameOnly:true))
+                  web.load(request)
           ''',1)
           s += """
           private func stvSimulatorDiagnostics() {
