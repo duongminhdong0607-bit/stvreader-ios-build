@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
       - name: Prepare headless browser
         run: |
           npm install --no-save playwright@1.58.2
@@ -45,6 +46,7 @@ jobs:
               }catch(e){}
             });
             page.on('pageerror',e=>console.log('PAGE_ERROR',e.message.slice(0,500)));
+            await page.addInitScript({content:require('fs').readFileSync('tools/stv-js-research-shim.js','utf8')});
             await page.addInitScript(()=>{
               const noop=()=>Promise.resolve({});
               window.Capacitor={platform:'ios',getPlatform:()=> 'ios',Plugins:{
