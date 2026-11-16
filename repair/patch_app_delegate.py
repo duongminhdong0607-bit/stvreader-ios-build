@@ -170,6 +170,7 @@ compat += "\n" + Path("stv-ios-tts.js").read_text(encoding="utf-8")
 compat += "\n" + Path("stv-ios-http-bridge.js").read_text(encoding="utf-8")
 compat += "\n" + Path("stv-com-session.js").read_text(encoding="utf-8")
 compat += "\n" + Path("stv-ios-chapter-transport.js").read_text(encoding="utf-8")
+compat += "\n" + Path("stv-ios-reader-feedback.js").read_text(encoding="utf-8")
 js_literal=json.dumps(compat, ensure_ascii=False)
 s=s.replace(
     "private var didOpenPublisherApp = false",
