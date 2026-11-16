@@ -1,8 +1,8 @@
 {
   "name": "stv-mobilereader-ios-capacitor-rebuild",
-  "version": "1.3.2-rebuild.1",
+  "version": "1.3.2-rebuild.2",
   "private": true,
-  "description": "Unofficial recovery of hybrid iOS STV MobileReader from available native and web components",
+  "description": "STV MobileReader iOS hybrid compatibility build with SQLite disabled for functional STV initialization",
   "scripts": {
     "ios:add": "cap add ios",
     "ios:sync": "cap sync ios"
@@ -17,11 +17,9 @@
     "@capacitor/filesystem": "^7.0.0",
     "@capacitor/haptics": "^7.0.0",
     "@capacitor/keyboard": "^7.0.0",
-    "@capacitor/preferences": "^7.0.0",
     "@capacitor/share": "^7.0.0",
     "@capacitor/splash-screen": "^7.0.0",
     "@capacitor/status-bar": "^7.0.0",
-    "@capacitor-community/sqlite": "^7.0.0",
     "@capacitor-community/text-to-speech": "^6.0.0"
   },
   "devDependencies": {
